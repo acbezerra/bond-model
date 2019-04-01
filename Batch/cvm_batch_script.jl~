@@ -1,0 +1,52 @@
+using Distributions
+using Interpolations
+using Distributed
+using DataFrames
+using Printf
+using Dierckx
+using JLD
+using CSV
+
+start_tic = time_ns()
+
+main_path = "/home/artur/BondPricing"
+module_path = string(main_path, "/", "Julia/modules/")
+include(string(module_path, "/", "TestFunctions.jl"))
+modls = ["Batch", "ModelObj", "AnalyticFunctions", 
+         "BondPrInterp", "EqFinDiff"]
+for modl in modls
+    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+end
+
+
+println(string("ARGUMENTS: ", ARGS))
+# ################ SYS ARGUMENTS ################
+# Capture Combination Number:
+m_comb_num = parse(Int, ARGS[1])
+
+# ###############################################
+
+# Start Timer
+tic = time_ns()
+
+for m in unique(bt.bp.df[:m])
+    # Create Batch & Model Objects
+    bt, cvm = Batch.get_bt_cvm(; m=m, m_comb_num=m_comb_num)
+
+    # Create Directories
+    bt = Batch.mk_comb_res_dirs(bt)
+
+    # Solve Debt at Par for all Coupon Values
+    soldf = @time Batch.get_cvm_debt_at_par(bt, cvm;
+                                            mu_b=cvm.mu_b, m=cvm.m,
+                                            save_soldf=true,
+                                            soldf_name=Batch.soldf_name)
+
+    # Solve for Optimal Capital Structure
+    optdf = Batch.optimal_cvm_capital_struct(bt, cvm;
+                                             df=soldf,
+                                             save_results=true,
+                                             opt_k_struct_df_name=Batch.opt_k_struct_df_name)
+end
+
+println(string("Total Script Run Time: ", (time_ns() - start_tic)/1e9/60., " minute(s)."))

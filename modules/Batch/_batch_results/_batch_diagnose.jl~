@@ -1,0 +1,27 @@
+
+
+function diag_df(bt, comb_num)
+    bt = Batch.set_par_dict(bt, comb_num)
+    bt = Batch.set_comb_res_paths(bt)
+    
+    combdf = DataFrame(bt.mi._svm_dict)
+    combdf[:comb_num] = comb_num
+    combdf[:folder_name] = bt.mi.comb_res_dir
+
+    # Count solutions:
+    dfs_list = [x for x in readdir(bt.mi.comb_res_path) if 
+                occursin(bt.dfn.eq_fd_cp_fn_prefix, x)]
+    combdf[:count] = size(dfs_list, 1)
+    
+    return combdf
+end
+
+
+function comb_df(bt)
+    combDFs = fetch(@spawn [diag_df(bt, comb) for comb in 
+                            range(1, stop=size(bt._params_combs[:], 1))])
+                
+    col_order = vcat([:comb_num, :count, :folder_name], names(combDFs[1])[1:end-3])
+    return vcat(combDFs...)[col_order]
+end
+

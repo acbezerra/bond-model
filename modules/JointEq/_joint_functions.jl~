@@ -1,0 +1,59 @@
+function check_param_consistency(jf)
+    # Common Parameters  
+    parvec = [par for par in [:r, :xi, :kappa, :alpha] if
+              abs.(get_param(jf.sf, par) - get_param(jf.rf, par)) > 1e-6]
+            
+    if !isempty(parvec)
+        [println(string(par, ": values do not match!")) for par in parvec]
+        return false
+    end
+    
+    return true
+end
+
+
+# ########################################################################
+function check_firm_dict(id)
+    for idk in [:comb_num, :m_comb_num]
+        if !haskey(id, idk) 
+            id[idk] = 0
+        end
+    end    
+    if !(:m in keys(id))
+        id[:m] = NaN
+    end
+    
+    # Must have at least one valid identifier:
+    id_cond = (id[:comb_num] > 0) || .&(!isnan(id[:m]), id[:m_comb_num] > 0)
+    if !id_cond
+        return id, false
+    end
+    return id, true
+end
+
+# kappa must match!
+function check_risky_firm_dict(bts, idr)
+    idr, id_cond1 = check_firm_dict(idr)
+    
+    # Check if has at at least one valid identifier:
+    id_cond2 = sum([x in keys(idr) for x in [:kappa, :lambda, :sigmah]]) > 0 
+    if id_cond1
+        println("Risky Firm will be constructed from identifiers!")
+        return idr, true
+    elseif id_cond2
+        println("Risky Firm will be constructed by modifying Safe Firm's parameters!")
+        for idk in [:kappa, :lambda, :sigmah]
+            if !haskey(idr, idk)
+                idr[idk] = NaN
+            end
+        end
+        combdf =  get_batch_comb_num(bts;
+                                    kappa=idr[:kappa],
+                                    lambda=idr[:lambda],
+                                    sigmah=idr[:sigmah])
+        idr[:comb_num] = combdf[:comb_num][1]
+
+        return idr, true
+    end
+    return idr, false
+end

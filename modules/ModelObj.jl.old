@@ -1,0 +1,305 @@
+module ModelObj
+
+using Parameters
+using CSV
+using JLD
+
+bpr_inputs_dict = Dict("vtmax" => .8,
+                       "vtN" => 25,
+                       "ttmN" => 15, 
+                       "vbhlmin" => .75,
+                       "vbhlmax" => 1.25,
+                       "vbhlN" => 20,
+                       "vmax" => 1.2,
+                       "vN" => 10^3,
+                       "uN" => 10^3,
+                       "vtN_ref" => 600,
+                       "ttmN_ref" => 400,
+                       "vbhlN_ref" => 500)
+
+obj_params = [:mu_b, :m, :c, :p, :vbl, :vbh]
+firm_params = [:V0, :alpha, :pi, :r, :gross_delta, :iota,
+               :xi, :kappa, :lambda, :sigmal, :sigmah]
+
+
+
+include("model_struct.jl")
+  
+
+@with_kw struct FirmParams
+    V0::Float32
+    alpha::Float32
+    pi::Float32
+    
+    r::Float32
+    gross_delta::Float32
+    iota::Float32
+    
+    xi::Float32
+    kappa::Float32
+    
+    lambda::Float32
+    sigmal::Float32
+    sigmah::Float32
+end
+
+
+# Bond Pricing Inputs
+@with_kw mutable struct BPrInputs
+    # Grid Bounds & Lengths
+    vtmax::Float64
+    vtN::Int128
+    ttm_max::Float64
+    ttmN::Int128
+    vbhlmin::Float64
+    vbhlmax::Float64
+    vbhlN::Int128
+
+    vmax::Float32
+    vN::Int128
+    uN::Int128
+
+    vtN_ref::Int128
+    ttmN_ref::Int128
+    vbhlN_ref::Int128
+end
+
+
+# Bond Pricing Grids & Surfaces
+@with_kw mutable struct BPrSurfs
+    # Grids
+    vtgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}}
+    ttmgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}}
+    vbhlgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}}
+    
+    # Surfs
+    f11_surf::Array{Float64,2}
+    f12_surf::Array{Float64,3}
+    f13_surf::Array{Float64,3}
+    f21_surf::Array{Float64,2}
+    f22_surf::Array{Float64,2}
+end
+
+
+# Bond Pricing Interpolated Functions
+@with_kw mutable struct BPrInterpFuns
+    f11
+    f12
+    f13
+    f21
+    f22
+end
+
+
+@with_kw mutable struct Firm
+    mu_b::Float64
+    m::Float64
+    c::Float64
+    p::Float64
+    vbl::Float64
+    vbh::Float64
+    pm::FirmParams
+    bi::BPrInputs
+    bs::BPrSurfs
+    bf::BPrInterpFuns
+end
+
+
+function set_bpr_inputs_struct(bprf)
+    return BPrInputs(bprf["vtmax"], 
+                     bprf["vtN"],
+                     bprf["ttm_max"],
+                     bprf["ttmN"],
+                     bprf["vbhlmin"],
+                     bprf["vbhlmax"],
+                     bprf["vbhlN"],
+                     bprf["vmax"],
+                     bprf["vN"], 
+                     bprf["uN"], 
+                     bprf["vtN_ref"],
+                     bprf["ttmN_ref"],
+                     bprf["vbhlN_ref"])
+end
+
+
+function set_bpr_surfs_struct(bprf)
+    return BPrSurfs(bprf["vtgrid"],
+                    bprf["ttmgrid"],
+                    bprf["vbhlgrid"],
+                    bprf["f11_surf"],
+                    bprf["f12_surf"], 
+                    bprf["f13_surf"], 
+                    bprf["f21_surf"], 
+                    bprf["f22_surf"])
+end
+
+
+function set_bpr_funs_struct(svm, bprf)
+    svm.bf.f11 = bprf["f11"]
+    svm.bf.f12 = bprf["f12"]
+    svm.bf.f13 = bprf["f13"]
+    svm.bf.f21 = bprf["f21"]
+    svm.bf.f22 = bprf["f22"]
+
+    return svm
+end
+
+
+
+function firm_constructor(dict; bpr_inputs=bpr_inputs_dict)
+    if !("vbl" in keys(dict))
+        vbl = 60.0
+        println(string("Setting initial vbl value to ", vbl))
+        dict["vbl"] = vbl
+    end
+
+    if !("mu_b" in keys(dict)) | isnan(dict["mu_b"])
+        mu_b = 1.0
+        println(string("Setting measure of bonds to ", mu_b))
+        dict["mu_b"] = mu_b
+    end
+
+    # Set Firm Parameters (dynamics, default, liquidity)
+    firm_params =  FirmParams(dict["V0"], dict["alpha"], dict["pi"],
+	                      dict["r"], dict["gross_delta"], dict["iota"],
+	                      dict["xi"], dict["kappa"],
+	                      dict["lambda"], dict["sigmal"], dict["sigmah"])
+
+    
+    # Bond Pricing Inputs
+    ttm_max = dict["m"]
+    inputs = BPrInputs(bpr_inputs["vtmax"], 
+                       bpr_inputs["vtN"],
+                       ttm_max,
+                       bpr_inputs["ttmN"],
+                       bpr_inputs["vbhlmin"],
+                       bpr_inputs["vbhlmax"],
+                       bpr_inputs["vbhlN"],
+                       bpr_inputs["vmax"],
+                       bpr_inputs["vN"], 
+                       bpr_inputs["uN"], 
+                       bpr_inputs["vtN_ref"],
+                       bpr_inputs["ttmN_ref"],
+                       bpr_inputs["vbhlN_ref"])
+
+
+    # Bond Pricing Grids & Surfaces
+    vtgrid = range(0.0, stop=inputs.vtmax, length=inputs.vtN)
+    ttmgrid = range(0.0, stop=inputs.ttm_max, length=inputs.ttmN)
+    vbhlgrid = range(inputs.vbhlmin, stop=inputs.vbhlmax, length=inputs.vbhlN)
+    
+    mat1 = fill(NaN, 1, 1)
+    mat2 = fill(NaN, 1, 1, 1)
+    
+    surfs = BPrSurfs(vtgrid, ttmgrid, vbhlgrid,
+                     mat1, mat2, mat2, mat1, mat1)
+
+    # Bond Pricing Interpolated Functions 
+    interp_funs = BPrInterpFuns(nothing, nothing, nothing,
+                                nothing, nothing)
+    
+    # Construct Firm Object
+    return Firm(dict["mu_b"], dict["m"],
+                dict["c"], dict["p"],
+	    	dict["vbl"], dict["vbh"],
+	        firm_params, inputs, surfs,
+                interp_funs)
+end
+
+
+function extract_param(svm, pname)
+    val = NaN
+    
+    svm_pos = findall(x -> x==pname, [string(x) for x in fieldnames(typeof(svm))])
+    svm_pm_pos = findall(x -> x==pname, [string(x) for x in fieldnames(typeof(svm.pm))])
+    
+    if length(svm_pos) > 0
+        # return getfield(svm, fieldnames(svm)[svm_pos[1]])
+        return getfield(svm, fieldnames(typeof(svm))[svm_pos[1]])
+    else
+        # return getfield(svm.pm, fieldnames(svm.pm)[svm_pm_pos[1]])
+        return getfield(svm.pm, fieldnames(typeof(svm.pm))[svm_pm_pos[1]])
+    end
+end
+
+
+function create_misrep_type(svmi, svmj)
+    # Extract Type-i parameters
+    ijdict = Dict{String, Float64}()
+    for par in vcat(obj_params, firm_params)
+        ijdict[string(par)] = extract_param(svmi, string(par))
+    end
+
+    # Set iota to zero
+    ijdict["iota"] = .0
+
+    # Copy capital structure from Type-j
+    for par in ["mu_b", "c", "p"]
+        ijdict[par] = extract_param(svmj, par)
+    end
+
+    return firm_constructor(ijdict)
+end
+
+
+function load_firm_params_bpr_inputs(svm_input_path; file_name="_svm_inputs")
+    df = CSV.read(string(svm_input_path, "/", file_name, ".csv"))
+
+    for var in obj_params
+        if !(var in names(df))
+            df[var] = NaN
+        end
+    end
+    
+    # ####### Generate Firm Params Dictionary #######
+    params_list = vcat(obj_params, firm_params)    
+    params = Dict{String, Any}(string(cn) => df[1, cn] for cn in params_list if
+                                !occursin("Column", string(cn)))
+    
+    # ####### Generate BPr Inputs Dictionary #######
+    cols = [:vtN, :ttmN, :vbhlN, :vN, :uN]
+    bpr_inputd = Dict{String, Any}(string(cn) => df[1, cn] for cn in names(df) if
+                                   !occursin("Column", string(cn)) &
+                                   !(cn in cols) & !(cn in params_list))
+
+    # Grid Length Numbers Should be Interger
+    for cn in cols
+        bpr_inputd[string(cn)] = trunc(Int128, df[1, cn])
+    end
+
+    return  params, bpr_inputd
+end
+
+
+function load_bpr_surfs(svm_input_path)
+    fsurfs = [string("f", f, "_surf") for f in ["11", "12", "13", "21", "22"]]
+    bprf = Dict()
+    for f in fsurfs
+        bprf[f] = load(string(svm_input_path, "/", f, ".jld"))[f]
+    end
+
+    return bprf
+end
+
+
+function set_bpr_surfs(svm, bprf)
+    svm.bs.f11_surf = bprf["f11_surf"]
+    svm.bs.f12_surf = bprf["f12_surf"]
+    svm.bs.f13_surf = bprf["f13_surf"]
+    svm.bs.f21_surf = bprf["f21_surf"]
+    svm.bs.f22_surf = bprf["f22_surf"]
+
+    return svm
+end
+
+
+function set_bpr_grids(svm)
+    svm.bs.vtgrid = range(0.0, stop=svm.bi.vtmax, length=vtN)
+    svm.bs.ttmgrid = range(0.0, stop=svm.bi.ttm_max, length=svm.bi.ttmN)
+    svm.bs.vbhlgrid = range(svm.bi.vbhlmin, stop=svm.bi.vbhlmax, length=svm.bi.vbhlN)
+
+    return svm
+end
+
+
+end

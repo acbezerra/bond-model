@@ -1,0 +1,39 @@
+
+
+
+
+
+function equity_fin_diff_misrep(bprfi, svmi, bprfj, svmj, vbl; vbl=NaN, mu_b=NaN, c=NaN, p=NaN, debt=NaN)
+    tic = time()
+
+
+    for par in ["vbl", "mu_b", "c", "p"]
+        if isnan(eval(Meta.parse(par)))
+            eval(Meta.parse(string(par, "= get_param(svm,", """  par """, ")")))
+        end
+    end
+    
+
+    # V MAX:
+    println("Computing Equity Vmax")
+    eq_Vmax = get_eq_Vmax(svm; mu_b=mu_b, c=c, p=p)
+    println(string("Equity Vmax: ", eq_Vmax))
+    println(" ")
+
+    vtN = 1500
+    _, vtgrid = grid_creator(log(eq_Vmax/float(vbl)), .0, vtN)
+
+    # #################################
+    # ###### Newly-Issued Bonds #######
+    # #################################
+    # Newly-Issued Bond Prices
+    bond_prices = eq_fd_newly_issued_bonds(bprf, svm, vbl, mu_b, c, p, vtgrid)
+    
+    eq_dict = eq_fd_core(svm, vbl, mu_b, c, p, vtgrid, bond_prices)
+    _, df = eq_fd_export_results(bprf, svm, vbl, mu_b, c, p, eq_dict)
+
+    println(string("Total computation time: ", time() - tic))
+
+    return df
+
+end
