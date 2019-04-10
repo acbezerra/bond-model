@@ -45,9 +45,6 @@ end
 
 
 
-
-
-
 # #############################################################
 mutable struct FirmSpecificParams
     iota::Float64
@@ -87,22 +84,23 @@ end
 
 
 mutable struct EPStruct
-    ep_ks::JointKStruct
-    sf::Firm
-    rf::Firm
+    # ep_ks::JointKStruct
+    # sf::Firm
+    # rf::Firm
+    jf::JointFirms
     sfdf::DataFrame
     rfdf::DataFrame
-    jedf::DataFrame
+    misrep::DataFrame
+    pool::DataFrame
+    sep::DataFrame
 end
 
 
 mutable struct OTCStruct
     sf::Firm
     rf::Firm
-    cvm_bt::BatchStruct
-    svm_bt::BatchStruct
-    cvmdf::DataFrame
-    svmdf::DataFrame
+    sfdf::DataFrame
+    rfdf::DataFrame
 end
 
 

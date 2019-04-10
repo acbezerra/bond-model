@@ -88,7 +88,6 @@ function PlotsObj(bt;
         end
     end
     
-
     svm_data = DataFrame()
     if load_svm_data
         try

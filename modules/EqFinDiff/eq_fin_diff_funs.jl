@@ -73,12 +73,9 @@ function eq_fd_newly_issued_bonds(svm, ks, vbl::Float64, vgrid;
     end
     
 
-    # bpr = sp_interpolate.interp1d(vcat(.0, v_subgrid), vcat(dpayoff, bpr_vec), 
-    #                              kind="cubic", fill_value="extrapolate")
     bpr = Dierckx.Spline1D(vcat(.0, v_subgrid), vcat(dpayoff, bpr_vec);
                            k=spline_k, bc=spline_bc)
 
-    println("here bpr")
     return Array([minimum([maximum([bpr(v)[1], dpayoff]), rfbond]) for v in vgrid])[2:end-1]
 end
 

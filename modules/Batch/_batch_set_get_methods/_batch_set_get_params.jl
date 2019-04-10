@@ -104,19 +104,19 @@ end
 
 function get_batch_comb_num(bt; display_msgs::Bool=true, 
                             svm_dict::Dict{Symbol,Float64}=Dict{Symbol,Float64}(),
+                            iota::Float64=NaN,
                             kappa::Float64=NaN,
                             lambda::Float64=NaN,
                             sigmah::Float64=NaN)
     
     # Check if all parameters are NaN ########
-    nancond = .&(isnan(kappa), isnan(lambda), isnan(sigmah))
+    nancond = .&(isnan(iota), isnan(kappa), isnan(lambda), isnan(sigmah))
     if .&(isempty(svm_dict), isempty(bt.mi._svm_dict))
         println("Parameter dictionary not found. Returning...")
         return 
     # elseif .&(isempty(svm_dict), nancond)
     #     println("Please define at least one parameter value. Returning...")
     #     return
-        
     end
     # ########################################
     
@@ -132,6 +132,9 @@ function get_batch_comb_num(bt; display_msgs::Bool=true,
         if display_msgs
             println("Setting parameter values... ")
         end
+        if !isnan(iota)
+            svm_dict[:iota] = eval(iota)
+        end
         if !isnan(kappa)
             svm_dict[:kappa] = eval(kappa)
         end
@@ -143,15 +146,16 @@ function get_batch_comb_num(bt; display_msgs::Bool=true,
         end
     end
     # ########################################
+    
     # Find row in the Parameter Combinations DataFrame
     svm_cols = [:lambda, :sigmah]
     cols = [x for x in names(bt.bp.df) if !(x in vcat([:comb_num, :m_comb_num], svm_cols))]
-    LL = [bt.bp.df[col] .== svm_dict[col] for col in cols]
+    LL = [abs.(bt.bp.df[col] .- svm_dict[col]) .< 1e-5 for col in cols]
     for col in svm_cols
         if isnan(svm_dict[col])
-            LL = vcat(LL, [isnan.(bt.bp.df[:sigmah])])
+            LL = vcat(LL, [isnan.(bt.bp.df[col])])
         else
-            LL = vcat(LL, [bt.bp.df[col] .== svm_dict[col]])
+            LL = vcat(LL, [abs.(bt.bp.df[col] .- svm_dict[col]) .< 1e-5])
         end
     end
 

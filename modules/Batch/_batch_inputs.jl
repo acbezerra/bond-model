@@ -133,9 +133,6 @@ dfcols = vcat(main_params, k_struct_params, debt_vars[1],
 soldf_name = "soldf"
 optdf_name = "optdf"
 opt_k_struct_df_name="opt_k_structs"
-opt_k_struct_df_coltypes=vcat([Int64, Float64, Int64],
-                              repeat([Float64], 32),
-                              [Bool], [Float64])
-
+opt_k_struct_df_coltypes=vcat(Int64, fill(Float64, 33), Bool, Float64)
 cvm_opt_k_struct_df_coltypes=vcat([Int64, Float64, Int64],
                                   fill(Float64, 32))

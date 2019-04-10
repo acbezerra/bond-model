@@ -184,7 +184,7 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
         ytickvals = reverse(ytickvals)
     end
 
-    ax = Seaborn.heatmap(Z, cmap="viridis",
+    ax = Seaborn.heatmap(Z, cmap=plt_cmap,
                           xticklabels=xtickvals,
                           yticklabels=ytickvals)
     ax.set_xlabel(string("\$", pt.xylabels[cols[2]][1], "\$"))
@@ -216,7 +216,9 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
                           xy_list::Array{Symbol,1},
                           z_var::Symbol,
                           fixed_params::Dict{Symbol,Float64};
-                          plt_cmap="viridis", make_title=true, add_title=false,
+                          plt_cmap::String="viridis",
+                          seaborn_style::String="darkgrid",
+                          make_title=true, add_title=false,
                           zpad=10, view_elev=25., view_azim=210,
                           xylabels::Array{Symbol,1}=[:m, :xi, :kappa, :lambda, :sigmal, :sigmah])
     # Documentation available at: https://matplotlib.org/mpl_toolkits/mplot3d/api.html
@@ -247,11 +249,16 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
 
     title_list = [string("\$", pt.xylabels[x][1], "=\$ %", pt.xylabels[x][2]) 
                         for x in xylabels if !(x in xy_list)]
-    title_values = [fixed_params[x] for x in xylabels if !(x in xy_list)]                                        
-                                     
+    title_values = [fixed_params[x] for x in xylabels if !(x in xy_list)]
+
+    if isempty(seaborn_style)
+        Seaborn.reset_orig()
+    else
+        Seaborn.set(style="darkgrid")
+    end
     surf = ax.plot_trisurf(xv, yv, zv,
                            linewidth=0.2,
-                           cmap=get_cmap(plt_cmap),
+                           cmap=plt_cmap,
                            antialiased=true)                    
 
     # Customize the x axis
@@ -259,25 +266,24 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
     ax.invert_xaxis()
     ax.xaxis.set_rotate_label(false)  # disable automatic rotation
     ax.set_xlabel(xy_format[1][1], labelpad=10, rotation=0)
-#     ax[:xaxis][:set_major_formatter](string("%", xy_format[1][2]))
+    ax.xaxis.set_major_formatter(PyPlot.matplotlib.ticker.FormatStrFormatter(string("%", xy_format[1][2])))
     ax.set_xticks(major_xticks)
 
     # Customize the y axis
     ax.yaxis.set_rotate_label(false)  # disable automatic rotation
     ax.set_ylabel(xy_format[2][1], labelpad=10, rotation=0)
-#     ax[:yaxis][:set_major_formatter](string("%", xy_format[2][2]))
+    ax.yaxis.set_major_formatter(PyPlot.matplotlib.ticker.FormatStrFormatter(string("%", xy_format[2][2])))
     ax.set_yticks(major_yticks)
 
     # Customize the z axis
     ax.zaxis.set_rotate_label(false)  # disable automatic rotation
+    ax.zaxis.set_major_formatter(PyPlot.matplotlib.ticker.FormatStrFormatter("%.2f"))
     ax.set_zlabel(pt.zlabels[z_var][1], rotation=90, labelpad=zpad)
-#     ax[:zaxis][:set_major_formatter]("%.1f")
     ax.set_zticks(major_zticks)
     ax.tick_params(axis="z", pad=zpad/2)
 
     ax.minorticks_on()
     ax.grid(which="minor", alpha=0.3)
-
     # ############### TITLE ###############
     ax_title = " "
     if make_title | add_title
@@ -366,10 +372,15 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
                                azim::Float64=210.,
                                zpad::Float64=10.,
                                plt_cmap::String="viridis", # 'Spectral', 'cool',
+                               seaborn_style::String="darkgrid",
                                heat_reverse_x::Bool=false,
                                heat_reverse_y::Bool=true,
                                interp_bool::Bool=false,
                                smooth_bool::Bool=false,
+                               ax1_dist::Float64=8.5,
+                               axs_wspace::Float64=.1,
+                               cbaxes::Array{Float64,1}=[.975, 0.15, 0.015, 0.675],
+                               sup_title_x::Float64=.575,
                                return_fig::Bool=true)
     
     # ###################################################
@@ -395,19 +406,23 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
     surf, ax1, fig_title = svm_plot_surface(pt, ax1, xyz[:,1], xyz[:,2], xyz[:,3], 
                                             xy_list, z_var, fixed_params;
                                             plt_cmap=plt_cmap, 
+                                            seaborn_style=seaborn_style,
                                             make_title=true, 
                                             add_title=false,
                                             zpad=zpad, view_elev=elev, view_azim=azim)
 
     # Set the background color of the pane YZ
-    ax1.w_xaxis.set_pane_color(ColorMap((213, 216, 220) ./  255))
+    #ax1.w_xaxis.set_pane_color(ColorMap((213, 216, 220) ./  255.))
+    ax1.w_xaxis.set_pane_color(PyPlot.matplotlib.colors.hex2color("#d5d8dc"))
 
     # Add a color bar which maps values to colors.
-    cb = fig.colorbar(surf, aspect=20, ax=ax1)
+    #    cb = fig.colorbar(surf, aspect=20, ax=ax1)
+    cbax = fig.add_axes(cbaxes) 
+    cb = fig.colorbar(surf, aspect=20, cax=cbax)
     cb.outline.set_visible(false)
 
     ax1.patch.set_facecolor("white")
-    ax1.dist = 9
+    ax1.dist = ax1_dist
     # ###################################################
 
     # ###################################################
@@ -422,7 +437,9 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
                               reverse_y_axis=heat_reverse_y)
     # ###################################################
 
-    fig.suptitle(fig_title, fontsize=14)
+    fig.suptitle(fig_title, fontsize=14, x=sup_title_x)
+    PyPlot.subplots_adjust(wspace=axs_wspace)
+    #PyPlot.show()
 
     if save_fig
         m = unique(pt._svm_surf[:m])[1]

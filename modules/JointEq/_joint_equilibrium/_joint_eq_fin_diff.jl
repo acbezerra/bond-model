@@ -153,9 +153,13 @@ function joint_eq_fd(jf; V0::Float64=NaN,
     # ##############################################
     
     # Compute Equity Values #########################
+    # No adjustments to vtgrid, because
+    # bond_prices and sf_eq_vbl already adjust for 
+    # the differences in the default barrier.
     sf_eq_dict = eq_fd_core(jf.sf, jks, jks.vbl,
                             sf_eq_vbl, sf_eq_max,
-                            vtgrid .-log(jks.vbl/jks.sf_vb), bond_prices)
+                            vtgrid, bond_prices) # no adjustments
+                            # vtgrid .-log(jks.vbl/jks.sf_vb), bond_prices)
     _, sf_df = eq_fd_export_results(jf.sf, jks, jks.vbl, sf_eq_dict; debt=debt_pr)
 
     sf_df[:mu_s] = jks.mu_s
@@ -165,7 +169,8 @@ function joint_eq_fd(jf; V0::Float64=NaN,
     
     rf_eq_dict = eq_fd_core(jf.rf, jks, jks.vbl,
                             rf_eq_vbl, rf_eq_max,
-                            vtgrid .-log(jks.vbl/jks.rf_vb), bond_prices)
+                            vtgrid, bond_prices)
+                            # vtgrid .-log(jks.vbl/jks.rf_vb), bond_prices)
     _, rf_df = eq_fd_export_results(jf.rf, jks, jks.vbl, rf_eq_dict; debt=debt_pr)
     rf_df[:mu_s] = jks.mu_s
     rf_df[:fi_vb] = jks.fi_rf_vb 

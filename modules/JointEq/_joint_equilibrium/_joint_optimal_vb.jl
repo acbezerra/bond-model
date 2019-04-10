@@ -1,3 +1,4 @@
+
 function joint_vb_extract_results(jf, jks,
                                    vbl::Float64;
                                    fi_sf_vb::Float64=NaN,
@@ -69,7 +70,7 @@ function compute_joint_eq_vb_results(jf, jks;
                                                     fi_sf_vb=jks.fi_sf_vb,
                                                     fi_rf_vb=jks.fi_rf_vb,
                                                     sf_defaults_first=true)
-                        for vbl in vbl_grid])
+                           for vbl in vbl_grid])
     # Collect Results
     sf_resdf = vcat([DataFrame(x) for x in sf_res]...)
 
@@ -78,7 +79,7 @@ function compute_joint_eq_vb_results(jf, jks;
                                                     fi_sf_vb=jks.fi_sf_vb,
                                                     fi_rf_vb=jks.fi_rf_vb,
                                                     sf_defaults_first=false)
-                        for vbl in vbl_grid])
+                           for vbl in vbl_grid])
     # Collect Results
     rf_resdf = vcat([DataFrame(x) for x in rf_res]...)
 
@@ -164,23 +165,45 @@ function compile_opt_vb_results(jf, jks, sfdf::DataFrame, rfdf::DataFrame)
 end
 
 
-function filter_joint_vb_results(df::DataFrame; tol::Float64=-1e-3)
-    vblist = []
-    for vbl in unique(df[:vb])
-        tmp = df[abs.(df[:vb] .-vbl) .< 1e-6, :]
-        cond = .&([tmp[x] .>= tol for x in [:eq_deriv, :eq_min_val]]...)
-        if size(tmp[cond, :], 1) == 2
-            append!(vblist, vbl)
-        end
+function filter_joint_vb_results(df::DataFrame;
+                                 tol1::Float64=-1e-2, tol2::Float64=1e-2)
+
+    # Limited Liability Conditions ############################
+    cond1 = df -> .&([df[x] .>= tol1 for x in [:eq_deriv, :eq_min_val]]...)
+
+    # When the Safe Firm defaults first, 
+    # its equity and equity derivative should be zero
+    # at the joint default barrier
+    sf_cond = df -> .&(df[:sf_defaults_first], 
+                       isnan.(df[:sf_vb]) .| (df[:eq_deriv] .<= tol2))
+
+    # When the Risky Firm defaults first, 
+    # its equity and equity derivative should be zero
+    # at the joint default barrier
+    rf_cond = df -> .&(df[:sf_defaults_first] .==false, 
+                       isnan.(df[:rf_vb]) .| (df[:eq_deriv] .<= tol2))
+
+    # Limited Liability Conditions must be satisfied by both firms:
+    llcond = df -> sum(.&(cond1(df), (sf_cond(df) .| rf_cond(df)))) == 2
+    # #########################################################
+
+    ## Find vb candidates
+    vbdf = by(df, :vb, llcond = names(df) => x -> llcond(x))
+    vblist = vbdf[vbdf[:llcond], :vb]
+
+    # Filter DataFrame
+    if !isempty(vblist)
+        return df[in.(df[:vb], vblist), :]
+    else
+        println(string("No results for mu_b in ", unique(df[:mu_b])))
     end
+end    
 
-    return df[[(vb in vblist) for vb in df[:vb]], :]
-end
 
-    
 function find_joint_optimal_vb(jf, jks;
                                mu_s::Float64=NaN,
-                               rerun_fi_vb::Bool=false,
+                               mu_b::Float64=NaN,
+                               rerun_fi_vb::Bool=true,
                                fi_sf_vb::Float64=NaN,
                                fi_rf_vb::Float64=NaN,
                                lb1::Float64=.75,
@@ -198,6 +221,10 @@ function find_joint_optimal_vb(jf, jks;
         setfield!(jks, :mu_s, mu_s)
     end
 
+    # Measure of Bonds
+    if !isnan(mu_b)
+        setfield!(jks, :mu_b, mu_b)
+    end
 
     # Set Full Information VBs
     if any([isnan(jks.fi_sf_vb),
@@ -209,22 +236,28 @@ function find_joint_optimal_vb(jf, jks;
                                        rerun_fi_vb=rerun_fi_vb,
                                        fi_sf_vb=fi_sf_vb,
                                        fi_rf_vb=fi_rf_vb,
-                                       lb1=lb1, ub1=ub1,
+                                       lb=lb1, ub=ub1,
                                        vbN=vbN1)
     end
 
     # Compute Equity Finite Differences Method
     sfdf, rfdf = compute_joint_eq_vb_results(jf, jks;
+                                             rerun_fi_vb=rerun_fi_vb,
+                                             fi_sf_vb=jks.fi_sf_vb,
+                                             fi_rf_vb=jks.fi_rf_vb,
+                                             lb1=lb1, ub1=ub1,
+                                             vbN1=vbN1,
                                              vbl_min=vbl_min,
                                              vbl_max=vbl_max,
                                              vbN2=vbN2,
                                              lb2=lb2, ub2=ub2)
 
     # Get Candidates
-    df = JointEq.compile_opt_vb_results(jf, jks, sfdf, rfdf)
+    df = compile_opt_vb_results(jf, jks, sfdf, rfdf)
 
     # Filter to Back out optimal vb
     return filter_joint_vb_results(df)
 end
+
 
 

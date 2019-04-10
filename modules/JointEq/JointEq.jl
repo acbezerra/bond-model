@@ -1,5 +1,7 @@
 module_path = "/home/artur/BondPricing/Julia/modules/"
-modnames = ["ModelObj", "Batch"]
+modnames = ["ModelObj", "AnalyticFunctions",
+            "BondPrInterp", "EqFinDiff",
+            "Batch", "FullInfoEq"]
 for modl in modnames
     if !(joinpath(module_path, modl) in LOAD_PATH)
         push!(LOAD_PATH, joinpath(module_path, modl))
@@ -42,292 +44,44 @@ using EqFinDiff: get_cvm_eq,
 using Batch: BatchObj,
              get_bt,
              get_bt_svm,
+             get_bt_mobj,
              get_batch_comb_num,
              load_cvm_opt_results_df,
              load_svm_opt_results_df,
              opt_k_struct_df_name,
              opt_k_struct_df_coltypes,
              BatchStruct,
-             interp_values
+             interp_values,
+             svm_param_values_dict,
+             common_params,
+             _params_order
 
-include("_joint_structs.jl")
-include("_joint_functions.jl")
+using FullInfoEq: set_full_information_vb!, find_optimal_bond_measure
 
+# Structs, Objects and Constructor Methods #################
+include("_joint_objects/_joint_structs.jl")
 
-
-function joint_firm_constructor(safe::Firm, risky::Firm;
-                                jks::JointKStruct=JointKStruct(fill(NaN, 10)...),
-                                m::Float64=NaN,
-                                load_results_dfs::Bool=false,
-                                opt_k_struct_df_name::String=opt_k_struct_df_name,
-                                svm_coltypes::Array{DataType,1}=vcat([Int64],
-                                                                     fill(Float64, 33),
-                                                                     [Bool, Float64]),
-                                recompute_svm::Bool=false)
-
-    sf = safe
-    rf = risky
-
-    cvm_bt = BatchObj(; model="cvm")
-    svm_bt = BatchObj(; model="svm")
-    cvmdf = DataFrame()
-    svmdf = DataFrame()
-
-    if .&(isnan(m), !isnan(jks.m))
-        m = jks.m
-    end
-     
-    if load_results_dfs
-        cvmdf = load_cvm_opt_results_df()
-        svmdf = load_svm_opt_results_df(svm_bt; m=m,
-                                        opt_k_struct_df_name=opt_k_struct_df_name,
-                                        coltypes=svm_coltypes,
-                                        recompute=recompute_svm) 
-    end
-    
-    jf = JointFirms(jks, sf, rf, cvm_bt, svm_bt, cvmdf, svmdf)
-end
+# Inputs -> in this order (need to define structs first)
+include("_joint_inputs.jl")
 
 
-function separating_joint_eq_constructor(jep;
-                                         rfp=FirmSpecificParams(fill(NaN, 3)...),
-                                         s_iota::Float64=NaN,
-                                         s_lambda::Float64=NaN,
-                                         s_sigmah::Float64=NaN,
-                                         r_iota::Float64=NaN,
-                                         r_lambda::Float64=NaN,
-                                         r_sigmah::Float64=NaN,
-                                         jeq::JointEqParams=JointEqParams(fill(NaN, 3)...),
-                                         fixed_svm_m::Bool=true,
-                                         mu_s::Float64=NaN,
-                                         kep::Float64=NaN,
-                                         kotc::Float64=NaN)
+include("_joint_objects/_joint_ep_constructor.jl")
+include("_joint_objects/_joint_constructors.jl")
+include("_joint_objects/_joint_k_struct_funs.jl")
+# ##########################################################
 
-    sfp = 
-    rfp = 
+# File and DataFrame Methods ###############################
+include("_joint_auxiliary/_joint_functions.jl")
+include("_joint_auxiliary/_joint_file_methods.jl")
+include("_joint_auxiliary/_joint_dataframe_methods.jl")
+# ##########################################################
 
-    # Identify Firm Model
-    sf_model = 
-    rf_model = 
-    
-    jeq = 
-
-    if sf_model == "cvm"
-        sf_bt = cbt
-    else
-        sf_bt = sbt
-    end
-
-    # #################################################################
-    # Electronic Platform 
-    # #################################################################
-    # Measure of Firms and Standardized Bond
-    ep_jks = JointKStruct(mu_s, NaN, m, c, p, NaN)
-
-    # Form EP Safe Firm
-    ep_sf_comb_num = get_batch_comb_num(sf_bt;
-                                        kappa = jeq.kep,
-                                        lambda = sfp.lambda,
-                                        sigmah = sfp.sigmah)[1, :comb_num]
-    _, ep_sf_svm = get_bt_obj(;model=sf_model, comb_num=ep_sf_comb_num)
-
-
-    # Form EP Risky Firm
-    ep_rf_comb_num = get_batch_comb_num(rf_bt;
-                                        kappa = jeq.kep,
-                                        lambda = rfp.lambda,
-                                        sigmah = rfp.sigmah)[1, :comb_num]
-    _, ep_rf_svm = get_bt_obj(;model=rf_model, comb_num=ep_rf_comb_num)
-
-    
-    # Electronic Platform Full-Information Equilibrium ################
-    ep_sf_eqdf = find_optimal_bond_measure(ep_sf_svm; jks = ep_jks)
-    ep_rf_eqdf = find_optimal_bond_measure(ep_rf_svm; jks = ep_jks)
-
-    # Electronic Platform Joint Equilibrium ###########################
-    ep_jf = joint_firm_constructor(ep_sf, ep_rf; load_results_dfs=false)
-    eq_je_eqdf = find_joint_optimal_vb(ep_jf, ep_jks)
-    
-    # Form Electronic Platform Struct #################################
-    ep = EPStruct(ep_ks,
-                  ep_sf_svm, ep_rf_svm,
-                  ep_sf_eqdf, ep_rf_eqdf, ep_je_eqdf)
-    # #################################################################
-
-    
-    # #################################################################   
-    # Electronic Platform Joint Equilibrium ###########################   
-    # #################################################################
-    # Form OTC Safe Firm
-    otc_sf_comb_num = get_batch_comb_num(sf_bt;
-                                        kappa = jeq.kotc,
-                                        lambda = sfp.lambda,
-                                        sigmah = sfp.sigmah)[1, :comb_num]
-    _, otc_sf_svm = get_bt_obj(;model=sf_model, comb_num=otc_sf_comb_num)
-
-    # Form OTC Risky Firm
-    otc_rf_comb_num = get_batch_comb_num(rf_bt;
-                                        kappa = jeq.kotc,
-                                        lambda = rfp.lambda,
-                                        sigmah = rfp.sigmah)[1, :comb_num]
-    _, otc_rf_svm = get_bt_obj(;model=rf_model, comb_num=otc_rf_comb_num)
-
-
-    # Form Joint Equilibrium Firm Object
-    m = NaN
-    if fixed_svm_m
-        m = otc_rf.m
-    end
-    
-    otc = joint_firm_constructor(otc_sf, otc_rf;
-                                 m=m;
-                                 load_results_dfs=true)
-
-    # Set Optimal Capital Structure
-    otc.sf = set_opt_k_struct(otc.sf, ModelObj.get_obj_model(otc.sf) == "cvm" ? otc.cvmdf : otc.svmdf)
-    otc.rf = set_opt_k_struct(otc.sf, ModelObj.get_obj_model(otc.rf) == "cvm" ? otc.cvmdf : otc.svmdf)   
-    # #################################################################
-
-    return JointEquilibrium(jep, ep, otc)
-end
-
-include("_joint_k_struct_funs.jl")
 include("_joint_pricing.jl")
-include("_joint_eq_fin_diff.jl")
-include("_joint_optimal_vb.jl")
-include("_joint_optimal_bond_measure.jl")
+
+# Equilibrium Methods -> Equity, Vb, mu_b Functions ########
+include("_joint_equilibrium/_joint_eq_fin_diff.jl")
+include("_joint_equilibrium/_joint_optimal_vb.jl")
+include("_joint_equilibrium/_joint_optimal_bond_measure.jl")
+# ##########################################################
+
 end
-
-# function joint_firm_constructor(idsl, 
-#                                 idrl;
-#                                 mu::Float64=1., set_opt_k_struct::Bool=true)
-
-    
-#     safef = Dict{Tuple{String, AbstractInt}, Any}()
-#     for ids in idsl
-#         ids, id_conds = check_firm_dict(ids)
-
-#         if id_conds
-#             println(ids)
-#             bts, svms = get_bt_mobj(; model=ids[:model],
-#                                     comb_num=ids[:cid])
-#             safef[(ids[:model], ids[:cid])] = FirmObj(bts, ids)
-#         else
-#             println("Missing identifier for safe firm!")
-#             println(string("model: ", ids[:moFirmdel], ", comb_num=", ids[:cid])) 
-#             println("Exiting...")
-#             return
-#         end
-#     end
-        
-       
-#     riskyf = Dict()
-#     for idr in idrl
-#         println(string("Constructing Risky Firm ", count)) 
-#         idr, id_condr = check_risky_firm_dict(bts, idr)
-
-#         if id_condr
-#             btr, svmr = get_bt_svm(; model="cvm",
-#                                    comb_num=convert(Int64, idr[:comb_num]))
-#             riskyf[(idr[:model], idr[:comb_num])] = FirmObj(btr, svmr)
-#         else
-#             println(string("Missing identifier for risky firm", count, "! Exiting..."))
-#             return
-#         end
-#         count += 1
-#     end
-
-#     if set_opt_k_struct
-#         # Load Optimal Capital Structures
-#         mat_list = vcat([svms.m], [riskyf[rkey].svm.m for rkey in keys(riskyf)])
-#         if !all(y->abs.(y - mat_list[1]) < 1e-6, mat_list)
-#             # If maturities differ
-#             optDf = load_svm_opt_results_df(bts; m=NaN)
-#         else
-#             # If all maturities are the same
-#             optDf = load_svm_opt_results_df(bts; m=svms.m)
-#         end
-        
-#         # Set Optimal Capital Structures
-#         svms = set_svm_opt_k_struct(svms, optDf)
-#         for rkey in keys(riskyf)
-#             riskyf[rkey].svm = set_opt_k_struct(riskyf[rkey].svm, optDf)
-#         end
-#     else
-#         optDf=DataFrame()
-#     end
-    
-#     return JointFirms(FirmObj(bts, svms), riskyf, mu, optDf)
-# end
-
-# function get_opt_k_struct(svm, df::DataFrame; tol::Float64=1e-6)
-#     # Find Index
-#     LL = []
-#     for var in fieldnames(FirmParams)
-#         append!(LL, [abs.(df[var] .- getfield(svm.pm, var)) .< tol])
-#     end
-#     index = .&(LL...)
-    
-#     # Set Capital Structure
-#     for var in [:mu_b, :m, :c, :p]
-#         setfield!(svm, var, df[index, var][1])
-#     end
-#     svm.vbl = df[index, :vb][1]
-    
-#     return svm
-# end
-
-
-# function joint_firm_constructor(svm1, svm2;
-#                                 mu_b::Float64=NaN, 
-#                                 m::Float64=NaN,
-#                                 c::Float64=NaN, 
-#                                 p::Float64=NaN,
-#                                 vbl1::Float64=NaN, 
-#                                 vbl2::Float64=NaN)
-
-#     # Set Parameters
-#     bt = Batch.set_par_dict(bt, comb_num)
-
-#     # Set Directories & Paths (Main, Batch, Maturity, Combination)
-#     bt = Batch.set_comb_res_paths(bt)
-
-#     # Construct Firm Object
-#     svm1 = Batch.load_bpr_surfs(bt)
-
-    
-
-# end
-
-
-
-
-# function capital_struct_setter(svm1, svm2;
-#                                mu_b::Float64=NaN, 
-#                                m::Float64=NaN,
-#                                c::Float64=NaN, 
-#                                p::Float64=NaN,
-#                                vbl1::Float64=NaN, 
-#                                vbl2::Float64=NaN)
-#     # Set Capital Structure ####################
-#     if isnan(mu_b)
-#         mu_b = svm1.mu_b
-#     end
-#     if isnan(c)
-#         c = svm1.c
-#     end
-#     if isnan(p)
-#         p = svm1.p
-#     end
-
-#     if isnan(vbl1)
-#         vbl1 = svm1.vbl
-#     end
-
-#     if isnan(vbl2)
-#         vbl2 = svm2.vbl
-#     end
-#     # ##########################################
-    
-#     return JointKStruct(mu_b, m, c, p, vbl1, vbl2)
-# end
