@@ -1,17 +1,18 @@
 function load_svm_opt_results(bt;
-                          comb_num::Integer=0,
-                          m::Float64=NaN,
-                          m_comb_num::Integer=0,
-                          display_msgs::Bool=true,
-                          toldf::DataFrame=Batch.toldf,
-                          drop_fail::Bool=false,
-                          save_soldf::Bool=true,
-                          soldf_name::String=soldf_name,
-                          interp_polyOrder::Integer=3,
-                          filter_windowSize::Integer=5 * 10^2 + 1, 
-                          filter_polyOrder::Integer=3,
-                          save_optdf::Bool=true,
-                          optdf_name::String=optdf_name)
+                              firm_obj_fun::Symbol=:firm_value,
+                              comb_num::Integer=0,
+                              m::Float64=NaN,
+                              m_comb_num::Integer=0,
+                              display_msgs::Bool=true,
+                              toldf::DataFrame=Batch.toldf,
+                              drop_fail::Bool=false,
+                              save_soldf::Bool=true,
+                              soldf_name::String=soldf_name,
+                              interp_polyOrder::Integer=3,
+                              filter_windowSize::Integer=5 * 10^2 + 1, 
+                              filter_polyOrder::Integer=3,
+                              save_optdf::Bool=true,
+                              optdf_name::String=optdf_name)
     
     bt = get_bt(;comb_num=comb_num,
                 m=m, m_comb_num=m_comb_num,
@@ -20,28 +21,31 @@ function load_svm_opt_results(bt;
     opt_k_struct_found = false
     if string(optdf_name, ".csv") in readdir(bt.mi.comb_res_path)
         cols = opt_k_struct_cols(bt)
-        coltypes = map(x -> begin
-                              if x == :eq_negative
-                                return Bool
-                              end
-                              return Float64
-                            end, cols)
-        optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), types=coltypes)
+        # coltypes = map(x -> begin
+        #                       if x == :eq_negative
+        #                         return Bool
+        #                       end
+        #                       return Float64
+        #                     end, cols)
+        optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), types=opt_k_struct_df_coltypes)
 
         if !isnan(optDF[:c][1])
             opt_k_struct_found=true
         end
     end
-    
 
-    if opt_k_struct_found
-        optDF = hcat(get_batch_comb_num(bt; display_msgs=display_msgs)[[:comb_num, :m_comb_num]], optDF)
-        id_cols = [:comb_num, :m, :m_comb_num]
-        cols_order = vcat(id_cols, [x for x in names(optDF) if !(x in id_cols)])
-        return optDF[cols_order]
-    else
+    # if opt_k_struct_found
+    #     #optDF = hcat(get_batch_comb_num(bt; display_msgs=display_msgs)[[:comb_num, :m_comb_num]], optDF)
+    #     combdf = get_batch_comb_num(bt)
+    #     optDF[:comb_num] =combdf[1, :comb_num]
+    #     optDF[:m_comb_num] =combdf[1, :comb_num]       
+    #     id_cols = [:comb_num, :m, :m_comb_num]
+    #     cols_order = vcat(id_cols, [x for x in names(optDF) if !(x in id_cols)])
+    #     optDF = optDF[cols_order]
+    if !opt_k_struct_found
         optDF = get_opt_results(bt;
                                 comb_num=comb_num,
+                                firm_obj_fun=firm_obj_fun,
                                 display_msgs=display_msgs,
                                 toldf=toldf,
                                 drop_fail=drop_fail,
@@ -53,11 +57,13 @@ function load_svm_opt_results(bt;
                                 save_optdf=save_optdf,
                                 optdf_name=optdf_name)
     end
+
     return optDF
 end
 
 
 function load_svm_opt_results_df(bt;
+                                 firm_obj_fun::Symbol=:firm_value,
                                  m::Float64=NaN,
                                  opt_k_struct_df_name::String=opt_k_struct_df_name,
                                  coltypes::Array{DataType,1}=opt_k_struct_df_coltypes,
@@ -65,10 +71,15 @@ function load_svm_opt_results_df(bt;
     if !isnan(m)
         bt = get_bt(;bt=bt, m=m, m_comb_num=1)
     end
-    
-    if recompute || !(string(opt_k_struct_df_name, ".csv") in readdir(bt.mi.maturity_path))
+
+    extension = lowercase(string(firm_obj_fun))
+    dfname = string(opt_k_struct_df_name, "_", extension)
+        
+    if recompute || !(string(dfname, ".csv") in readdir(bt.mi.maturity_path))
         println("Compiling results...")
-        return compile_svm_opt_results(bt; m=m, opt_k_struct_df_name=opt_k_struct_df_name)
+        optDF = compile_svm_opt_results(bt; m=m,
+                                        firm_obj_fun=firm_obj_fun,
+                                        opt_k_struct_df_name=opt_k_struct_df_name)
         
     else
         if isnan(m)
@@ -77,6 +88,11 @@ function load_svm_opt_results_df(bt;
             fpath = bt.mi.maturity_path
         end
         println("Loading optimal results dataframe...")
-        return CSV.read(string(fpath, "/", opt_k_struct_df_name, ".csv"); types=coltypes)
+        optDF = CSV.read(string(fpath, "/", dfname, ".csv"); types=coltypes)
     end
+
+    # if !(:MBR in names(optDF))
+    #     optDF[:MBR] = get_mbr(unique(optDF[:V0])[1], optDF[:debt], optDF[:equity])
+    # end
+    return optDF
 end

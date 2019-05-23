@@ -63,22 +63,29 @@ end
 function reshape_sf_rf_df(df::DataFrame)
     specific_cols = [col for col in names(df) if 
                      !(col in vcat(:sf_defaults_first,
+                                   :eq_type,
                                    epmcols,
                                    commoncols, vbcols))]
 
     # Capital Structure
-    ksdf = DataFrame(df[1, [:sf_defaults_first, epmcols..., :vb]])
+    if df[1, :eq_type] == "full_info"
+        ksdf = DataFrame(df[1, [:eq_type]])
+        sfdf = DataFrame(df[1, specific_cols])
+        rfdf = DataFrame(df[2, specific_cols])
+    else
+        ksdf = DataFrame(df[1, [:eq_type, :sf_defaults_first, epmcols..., :vb]])
+        sfdf = DataFrame(df[1, vcat([:sf_vb], specific_cols)])
+        rfdf = DataFrame(df[2, vcat([:rf_vb], specific_cols)])
+    end
 
     # Common Parameters
     commondf =  DataFrame(df[1, commoncols])
 
     # Safe Firm Results
-    sfdf = DataFrame(df[1, vcat([:sf_vb], specific_cols)])
     names!(sfdf, vcat([:sf_vb], [Symbol(:s_, col) for col in specific_cols
                                  if (col != :sf_defaults_first)]))
 
     # Risky Firm Results
-    rfdf = DataFrame(df[2, vcat([:rf_vb], specific_cols)])
     names!(rfdf, vcat([:rf_vb], [Symbol(:r_, col) for col in specific_cols
                                  if (col != :sf_defaults_first)]))
 
@@ -147,6 +154,27 @@ end
 # ###############################################################################
 
 
+function joint_eq_form_dataframes(;pool_list::Array{DataFrame,1}=[DataFrame()],
+                                  sep_list::Array{DataFrame,1}=[DataFrame()])
+   
+    pooldf = DataFrame()
+    sepdf = DataFrame()
+
+
+    dtime = Dates.now()
+    if !.&(size(pool_list, 1) == 1, isempty(pool_list[1]))
+        pooldf = sort!(DataFrame(vcat(pool_list...)), :mu_s)
+        pooldf[:datetime] = dtime
+    end
+    if !.&(size(sep_list, 1) == 1, isempty(sep_list[1]))
+        sepdf = sort!(DataFrame(vcat(sep_list...)), :mu_s)
+        sepdf[:datetime] = dtime
+    end
+
+    return pooldf, sepdf
+end
+                                    
+
 # Save DataFrames ###############################################################
 function update_file(fpath::String, fname::String, df::DataFrame)
     if !JointEq.exists_ep_df(fpath, fname)
@@ -184,4 +212,39 @@ function update_file(fpath::String, fname::String, df::DataFrame)
         CSV.write(string(fpath, "/", fname, ".csv"), resdf)
     end
 end
+
+
+function remove_dup_save_df(df::DataFrame, eq_type::String, jks_fpath::String)
+    if eq_type in keys(eq_type_dict)
+        df_name = eq_type_dict[eq_type][:dfn]
+    else
+        println("Unrecognized equilibrium type.")
+        println("Please enter 'full_info', 'pooling' or 'separating'.")
+        println("Exiting...")
+        return
+    end
+    
+    df_fpath_name = string(jks_fpath, "/", df_name, ".csv")
+    cols = (eq_type == "full_info") ? [x for x in names(df) if x != :datetime] : dup_rows_params
+    println(cols)
+    
+    if (string(df_name, ".csv") in readdir(jks_fpath))
+        df_all = CSV.read(df_fpath_name)
+
+        # Add new row
+        df_all = vcat(df_all, df)
+
+        # Move new row to the top
+        sort!(df_all, :datetime, rev=true)
+
+        # Remove old duplicate row
+        df_all = unique(df_all, cols)
+    else
+        df_all = df
+    end
+    # Save file
+    CSV.write(df_fpath_name, df_all)
+    
+    return df_all
+end    
 # ###############################################################################

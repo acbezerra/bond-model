@@ -12,12 +12,17 @@
 #     end
 # end
 
+function str_format_fun(a::String,b::Float64)
+    return @eval @sprintf($a, $b)
+end
+
 
 # ############## Set Directories ##############
 function form_main_dir_path(main_dir::String)
     return joinpath(pwd()[1:findfirst("artur", pwd())[end]],
                     "BondPricing", main_dir)
 end
+
 
 function set_main_dir_path(bt)
     # Main directory is called "Julia". Find it!
@@ -26,6 +31,7 @@ function set_main_dir_path(bt)
     bt.mi.main_dir_path = form_main_dir_path(bt.dfn.main_dir)
     return bt
 end
+
 
 function set_batch_res_dir(bt)
     # Path to the Results Directory
@@ -42,30 +48,40 @@ end
 
 
 function set_maturity_dir(bt)
-    bt.mi.maturity_dir = string(bt.dfn.mat_dir_prefix, 
-                                 get_par_dict(bt)[:m])
+    bt.mi.maturity_dir =string(bt.dfn.mat_dir_prefix,
+                               str_format_fun(comb_folder_dict[:m][2],
+                                              get_par_dict(bt)[:m]))
     return bt
 end
 
 
 function set_comb_res_dir(bt)
-    folder_name = string("xi_", @sprintf("%.2f", get_par_dict(bt)[:xi]),
-                         "__kappa_", @sprintf("%.0f", 1e4 * get_par_dict(bt)[:kappa]),
-                         "_bp", 
-                         "__gross_delta_", @sprintf("%.0f", 1e4 * get_par_dict(bt)[:gross_delta]),
-                         "_bp",                      
-                         "__iota_", @sprintf("%.0f", 1e4 * get_par_dict(bt)[:iota]), 
-                         "_bp")
+    folder_name = string(comb_folder_dict[:mu_b][1], str_format_fun(comb_folder_dict[:mu_b][2],
+                                                                    get_par_dict(bt)[:mu_b]),
+                         comb_folder_dict[:xi][1], str_format_fun(comb_folder_dict[:xi][2],
+                                                                  get_par_dict(bt)[:xi]),
+                         comb_folder_dict[:kappa][1], str_format_fun(comb_folder_dict[:kappa][2],
+                                                               1e4 * get_par_dict(bt)[:kappa]),
+                         comb_folder_dict[:kappa][3], 
+                         comb_folder_dict[:gross_delta][1], str_format_fun(comb_folder_dict[:gross_delta][2],
+                                                                     1e4 * get_par_dict(bt)[:gross_delta]),
+                         comb_folder_dict[:gross_delta][3],                      
+                         comb_folder_dict[:iota][1], str_format_fun(comb_folder_dict[:iota][2],
+                                                              1e4 * get_par_dict(bt)[:iota]), 
+                         comb_folder_dict[:iota][3])
     
     # if "sigma" in bt.bp._params_order
     if bt.model == "cvm"
-        bt.mi.comb_res_dir = string(folder_name, "__sigmal_", 
-                                     @sprintf("%.2f", get_par_dict(bt)[:sigmal]))
+        bt.mi.comb_res_dir = string(folder_name, comb_folder_dict[:sigmal][1], 
+                                     str_format_fun(comb_folder_dict[:sigmal][2], get_par_dict(bt)[:sigmal]))
     else
         bt.mi.comb_res_dir = string(folder_name, 
-                                     "__lambda_", @sprintf("%.2f", get_par_dict(bt)[:lambda]),
-                                     "__sigmal_", @sprintf("%.2f", get_par_dict(bt)[:sigmal]),
-                                     "__sigmah_", @sprintf("%.2f", get_par_dict(bt)[:sigmah]))
+                                    comb_folder_dict[:lambda][1], str_format_fun(comb_folder_dict[:lambda][2],
+                                                                           get_par_dict(bt)[:lambda]),
+                                    comb_folder_dict[:sigmal][1], str_format_fun(comb_folder_dict[:sigmal][2],
+                                                                           get_par_dict(bt)[:sigmal]),
+                                    comb_folder_dict[:sigmah][1], str_format_fun(comb_folder_dict[:sigmah][2],
+                                                                           get_par_dict(bt)[:sigmah]))
     end
     
     return bt
@@ -119,7 +135,7 @@ function get_coupon_res_path(bt, coupon::Float64)
     bt = set_comb_res_paths(bt)
     
     return joinpath(bt.mi.comb_res_path, 
-                    string(bt.coupon_dir_prefix, @sprintf("%.2f", coupon)))    
+                    string(bt.coupon_dir_prefix, str_format_fun(comb_folder_dict[:c][2], coupon)))    
 end
 
 
@@ -184,7 +200,7 @@ function get_results_path(bt, m::Float64)
 
     return string(bt.mi.main_dir_path, "/", 
                   bt.mi.batch_res_dir, 
-                  string(bt.dfn.mat_dir_prefix, @sprintf("%.1f", m)))
+                  string(bt.dfn.mat_dir_prefix, str_format_fun(comb_folder_dict[:m][2], m)))
 end
 
 

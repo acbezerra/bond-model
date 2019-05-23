@@ -162,3 +162,12 @@ function get_batch_comb_num(bt; display_msgs::Bool=true,
     return DataFrame(bt.bp.df[.&(LL...), [:comb_num, :m, :m_comb_num]])
 end
 
+
+function get_batch_comb_numbers(bt, pardict::Dict{Symbol,Array{Float64,1}};
+                                idcols::Array{Symbol,1}=[:comb_num, :m, :m_comb_num])
+    cond = .&([any.([(abs.(x .- pardict[var]).<1e-6) for x in bt.bp.df[var]]) 
+            for var in keys(pardict)]...)
+
+    
+   return bt.bp.df[cond, unique(vcat(idcols, [k for k in keys(pardict)]))]
+end

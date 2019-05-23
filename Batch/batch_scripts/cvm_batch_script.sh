@@ -8,7 +8,7 @@
 #PBS -l nodes=1:ppn=20,mem=20g
 #PBS -j oe
 #PBS -V
-#PBS -t 1-208
+#PBS -t 1-1
 
 
 cd $PBS_O_WORKDIR

@@ -53,7 +53,7 @@ function adjust_pricing_parameters(jf, jks, mu_s, Vt, vt)
     # Capital Structure
     for fn in fieldnames(JointKStruct)
         if isnan(getfield(jks, fn))
-            setfield!(jks, fn, jf.jks)
+            setfield!(jks, fn, getfield(jf.jks, fn))
         end
     end
 
@@ -144,7 +144,7 @@ function joint_debt_price(jf;
                                     c=jks.c, p=jks.p,
                                     N1=ttmN0, N2=ttmN)
     elseif abs.(jf.sf.m - jks.m) < 1e-4
-        sf_bpr = get_svm_debt_price(jf.sf, jks.sf_vb;
+        sf_dpr = get_svm_debt_price(jf.sf, jks.sf_vb;
                                     Vt=jks.vbl * exp(vt), 
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ttmN=ttmN)
@@ -175,5 +175,5 @@ function joint_debt_price(jf;
     end
 
     # Joint Price
-    return mu_s * sf_dpr + (1 - mu_s) * rf_dpr
+    return mu_s * sf_dpr + (1. - mu_s) * rf_dpr
 end

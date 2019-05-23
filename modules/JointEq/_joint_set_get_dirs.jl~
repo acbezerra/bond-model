@@ -1,0 +1,34 @@
+
+# ############## Get Directories ##############
+function get_joint_eq_dir(jf)
+    common_param_dir = ""
+    for par in common_dir_par_list
+        if par in [:kappa, :gross_delta]
+            par_string =  string(str_format_fun(jeq_comb_folder_dict[par][2],
+                                                1e4 * get_param(jf.sf, par)),
+                                 jeq_comb_folder_dict[par][3])
+        else
+            par_string =  string(str_format_fun(jeq_comb_folder_dict[par][2],
+                                                get_param(jf.sf, par)))
+        end
+        common_param_dir = string(common_param_dir, jeq_comb_folder_dict[par][1], par_string)
+    end
+
+    return common_param_dir
+end
+
+
+function get_jks_dir(jf)
+    return string(jeq_comb_folder_dict[:m][1], str_format_fun(jeq_comb_folder_dict[:m][2], jf.jks.m), 
+                  jeq_comb_folder_dict[:c][1], str_format_fun(jeq_comb_folder_dict[:c][2], jf.jks.c), 
+                  jeq_comb_folder_dict[:p][1], str_format_fun(jeq_comb_folder_dict[:p][2], jf.jks.p))
+end
+
+
+function get_res_jks_dir(jf)
+    res_dir_path = string(form_main_dir_path(main_dir), "/", res_dir)
+    common_params_dir = get_joint_eq_dir(jf)
+    jks_dir = get_jks_dir(jf)
+
+    return string(res_dir_path, "/", common_params_dir, "/", jks_dir)
+end

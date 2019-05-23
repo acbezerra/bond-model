@@ -85,9 +85,11 @@ function p_interp_fun(svm, x::DataFrame, toldf::DataFrame; N::Integer=10^5, quie
                      debt = opt_debt,
                      equity = opt_eq,
                      firm_value = opt_firm_val,
-                     leverage = (opt_debt / opt_firm_val) * 100,
-                     ROE = (opt_eq / (svm.pm.V0 - opt_debt) - 1) * 100,
+                     leverage = get_leverage(opt_debt, opt_eq),
+                     MBR = get_mbr(svm.pm.V0, opt_debt, opt_eq),               
                      p_filter_success = p_filter_success)
+    # leverage = (opt_debt / opt_firm_val) * 100,
+    # ROE = (opt_eq / (svm.pm.V0 - opt_debt) - 1) * 100,
     
 end
 

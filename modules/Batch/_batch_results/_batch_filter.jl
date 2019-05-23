@@ -77,7 +77,7 @@ function filter_k_struct(df; interp_polyOrder::Integer=3,
         tmp = Dierckx.Spline1D(df[:c], df[x], k=interp_polyOrder, bc="extrapolate")
         sgF[x] = savitsky_golay(tmp(sgF[:cgrid]),  filter_windowSize, filter_polyOrder)
     end
-    sgF[:firm_value] = sgF[:debt] .+ sgF[:equity]
+    # sgF[:firm_value] = sgF[:debt] .+ sgF[:equity]
     
     return sgF
 end

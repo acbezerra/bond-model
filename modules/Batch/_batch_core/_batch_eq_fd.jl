@@ -60,7 +60,7 @@ function eq_fd_method(bt, svm, df; mu_b=NaN, c=NaN)
         c=svm.c
     end
     
-    res = @time fetch(@spawn [eq_fd(svm, df[i, :vb]; mu_b=mu_b, c=c, p=df[i, :p]) 
+    res = @time fetch(@spawn [eq_fd(svm; vbl=df[i, :vb], mu_b=mu_b, c=c, p=df[i, :p]) 
                               for i in 1:size(df, 1)])
 
     # Collect Results
@@ -95,7 +95,7 @@ function non_interp_values(svm, df)
     # Share Values
     df[:firm_value] = df[:debt] .+ df[:equity]
     df[:leverage] = (df[:debt]./df[:firm_value]) .* 100
-    df[:ROE] = (df[:equity]./(svm.pm.V0 .- df[:debt]) .- 1) .* 100
+    df[:MBR] = (df[:equity]./(svm.pm.V0 .- df[:debt]) .- 1) .* 100
 
     return df
 end

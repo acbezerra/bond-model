@@ -42,9 +42,9 @@ echo $PBS_ARRAYID
 param_comb=$PBS_ARRAYID  # 1  # $PBS_ARRAYID
 skip_julia=1
 coupon_pos=999 # $PBS_ARRAYID  # 99
-skip_c=0
+skip_c=1
 skip_sol=1
-skip_all_eqfd=0
+skip_all_eqfd=1
 
 echo i. Number of processors/cores: $PBS_NUM_PPN
 echo ii. Memory: $job_mem

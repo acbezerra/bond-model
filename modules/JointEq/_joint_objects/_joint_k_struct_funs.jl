@@ -144,3 +144,40 @@ function interp_optimal_vbs(jf, jks, df::DataFrame;
 end
 
 
+function refine_contingent_vbs(jf, jks, 
+                               sf_vb::Float64, rf_vb::Float64; 
+                               sf_defaults_first::Bool=false,
+                               N::Int64=7,
+                               spline_k::Int64=3, 
+                               spline_bc::String="extrapolate")
+    
+    tvb = !(sf_defaults_first) ? rf_vb : sf_vb
+    tvar = !(sf_defaults_first) ? :rf_vb : :sf_vb
+    cond_var = !(sf_defaults_first) ? :sf_vb : :rf_vb
+    
+    dfL = []
+    for vb in range(.95 * tvb, stop = 1.05 * tvb, length=N)
+        sf_vb, rf_vb = JointEq.get_type_contingent_vbs(vb,
+                                                       jks.fi_sf_vb,
+                                                       jks.fi_rf_vb; 
+                                                       sf_defaults_first=sf_defaults_first)
+        tmp = JointEq.joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+        push!(dfL, tmp)
+    end
+    df = vcat(dfL...)
+    cond = isnan.(df[cond_var])
+    
+    tvb_grid = range(minimum(df[cond, tvar]), stop=maximum(df[cond, tvar]), length=10^5)
+    tvb_interp = Dierckx.Spline1D(df[cond, tvar], df[cond, :eq_deriv]; 
+                                  k=spline_k, bc=spline_bc)
+    
+    
+    opt_tvb = tvb_grid[argmin(abs.(tvb_interp(tvb_grid)))]
+    sf_vb, rf_vb = get_type_contingent_vbs(opt_tvb,
+                                           jks.fi_sf_vb,
+                                           jks.fi_rf_vb; 
+                                           sf_defaults_first=sf_defaults_first)
+    
+    return joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+end
+

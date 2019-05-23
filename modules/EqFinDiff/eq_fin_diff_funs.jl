@@ -280,10 +280,12 @@ function eq_fd_export_results(svm, ks, vbl::Float64,
     firm_value = debt + eq_dict[:e0]
 
     # Compute Leverage:
-    lev = (debt / firm_value) * 100
+    # lev = (debt / firm_value) * 100
+    lev = get_leverage(debt, eq_dict[:e0])
 
-    # Compute ROE:
-    roe = (eq_dict[:e0] / (eq_dict[:V0] - debt) - 1.) * 100
+    # Compute MBR:
+    #mbr = (eq_dict[:e0] / (eq_dict[:V0] - debt) - 1.) * 100
+    mbr = get_mbr(eq_dict[:V0], debt, eq_dict[:e0])
 
     results = Dict(:V0 =>  eq_dict[:V0],
                    :r =>  svm.pm.r,
@@ -311,7 +313,7 @@ function eq_fd_export_results(svm, ks, vbl::Float64,
                    :eq_negative =>  eq_dict[:eq_negative],
                    :eq_deriv_min_val =>  eq_dict[:eq_deriv_min_val],
                    :leverage =>  lev,
-                   :ROE =>  roe)
+                   :MBR =>  mbr)
 
     df = DataFrame(results)
 

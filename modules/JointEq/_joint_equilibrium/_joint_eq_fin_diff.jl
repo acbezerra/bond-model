@@ -66,7 +66,7 @@ vb_cols = [:fi_vb, :sf_vb, :rf_vb, :vb]
 # EFD
 share_cols = [:eq_deriv, :eq_deriv_min_val, 
               :eq_min_val, :eq_negative, 
-              :eq_vb, :ROE, :debt, :equity, 
+              :eq_vb, :MBR, :debt, :equity, 
               :firm_value, :leverage]
 
 # Parameters

@@ -23,8 +23,12 @@ using Distributed
 
 
 using ModelObj: firm_constructor
-using AnalyticFunctions: get_cvm_vb, get_agg_c, get_agg_p, get_rdisc
-using BondPrInterp: get_cvm_debt_price, get_svm_debt_price, bpr_surfs, bpr_interp
+using AnalyticFunctions: get_cvm_vb, get_agg_c,
+                         get_agg_p, get_rdisc,
+                         get_param,
+                         get_leverage, get_mbr
+using BondPrInterp: get_cvm_debt_price, get_svm_debt_price,
+                    bpr_surfs, bpr_interp
 using EqFinDiff: get_cvm_eq, eq_fd
 
 

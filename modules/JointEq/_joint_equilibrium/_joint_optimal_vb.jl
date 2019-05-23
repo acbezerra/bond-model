@@ -151,10 +151,19 @@ function compile_opt_vb_results(jf, jks, sfdf::DataFrame, rfdf::DataFrame)
                                            jks.fi_sf_vb,
                                            jks.fi_rf_vb; 
                                            sf_defaults_first=false)
-    r2 = JointEq.joint_eq_fd(jf,; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    r2 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    if abs.(r2[isnan.(r2[:sf_vb]), :eq_deriv][1]) > 1e-2
+        r2 = refine_contingent_vbs(jf, jks, sf_vb, rf_vb)
+        println(r2)
+    end
     # ###############################################################
-
+    println("=====================================================")
+    println("=====================================================")
+    println(r2)
+    println("=====================================================")
+    println("=====================================================")
     # Compile Results
+    println("compiling results")
     df =  vcat([s1, s2, r1, r2]...)
     df[:sf_defaults_first] = vcat([fill(true, 4), fill(false, 4)]...)
 

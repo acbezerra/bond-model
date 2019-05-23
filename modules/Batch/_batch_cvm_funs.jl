@@ -119,7 +119,7 @@ function get_cvm_c_debt_at_par(bt, cvm, c::Float64;
     df[:eq_min_val] = df[:eq_vb][1]
     df[:equity] = get_cvm_eq(cvm, cvm.pm.V0, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
                 
-    # Firm Value, Leverage & ROE
+    # Firm Value, Leverage & MBR
     df = non_interp_values(cvm, df)
 
     # Rearrange Columns
@@ -149,13 +149,16 @@ function get_cvm_debt_at_par(bt, cvm;
 end
 
 
-function optimal_cvm_capital_struct(bt, cvm; df::DataFrame=DataFrame(),
+function optimal_cvm_capital_struct(bt, cvm;
+                                    firm_obj_fun::Symbol=:firm_value,
+                                    df::DataFrame=DataFrame(),
                                     dfname::String=Batch.soldf_name,
                                     interp_polyOrder::Int64=3,
                                     filter_windowSize::Int64=5 * 10^2 + 1, 
                                     filter_polyOrder::Int64=3,
-                                    save_results::Bool=true,
-                                    opt_k_struct_df_name::String=opt_k_struct_df_name)
+                                    replace_optdf::Bool=false,
+                                    save_optdf::Bool=true,
+                                    optdf_name::String=optdf_name)
     
     # Load Solutions
     if isempty(df)
@@ -168,9 +171,13 @@ function optimal_cvm_capital_struct(bt, cvm; df::DataFrame=DataFrame(),
                           filter_windowSize=filter_windowSize,
                           filter_polyOrder=filter_polyOrder,
                           interp_vars=[:p, :vb, :debt, :equity])
+
+    # Compute Optimal Capital Structure
+    sgF[:firm_value] = sgF[:debt] .+ sgF[:equity]
+    sgF[:MBR] = get_mbr(get_param(cvm, :V0), sgF[:debt], sgF[:equity])
     
     # Compute Optimal Capital Structure
-    cpos = minimum(findlocalmaxima(sgF[:firm_value]))
+    cpos = minimum(findlocalmaxima(sgF[firm_obj_fun]))
     
     optDF = DataFrame()
 
@@ -221,69 +228,163 @@ function optimal_cvm_capital_struct(bt, cvm; df::DataFrame=DataFrame(),
     optDF[:cvmh_vb] = NaN
     optDF[:eq_deriv] = NaN
     optDF[:eq_min_val] = NaN
+    optDF[:eq_deriv_min_val] = NaN
+
+    optDF[:eq_negative] = false
      
-    
-    # Reoder columns
-    cols = opt_k_struct_cols(bt)
+    # Add Column with firm_obj_fun
+    optDF[:obj_fun] = String(firm_obj_fun)
 
-    if save_results
-        CSV.write(string(bt.mi.comb_res_path, "/", opt_k_struct_df_name, ".csv"), optDF)
+    # Add combination IDs
+    combdf = get_batch_comb_num(bt)
+    optDF[:comb_num] =combdf[1, :comb_num]
+    optDF[:m_comb_num] =combdf[1, :comb_num]       
+    id_cols = [:comb_num, :m, :m_comb_num]
+    cols_order = vcat(id_cols, [x for x in opt_k_struct_cols(bt) if !(x in id_cols)])
+    optDF = optDF[cols_order]
+
+    if replace_optdf
+        CSV.write(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), optDF)
+    elseif save_optdf
+        idcols = [x for x in vcat([:m, :obj_fun],
+                                  bt.dfc.main_params,
+                                  bt.dfc.fixed_params) if !(x in [:lambda, :sigmah])]
+        save_combination_opt_k_struct(bt, optDF; dfname=optdf_name,
+                                      idcols=idcols,
+                                      coltypes=cvm_opt_k_struct_df_coltypes)
     end
-
-    return optDF[cols]
+    
+    return optDF
 end
 
 
 function cvm_results_loader(comb_num::Int64; 
-                            optdf_name::String=opt_k_struct_df_name, 
-                            coltypes::Array{DataType,1}=vcat(fill(Float64, 27), 
-                                                             [Bool], 
-                                                             fill(Float64, 6)),
+                            optdf_name::String=optdf_name, 
+                            coltypes::Array{DataType,1}=cvm_opt_k_struct_df_coltypes,
                             display_msgs::Bool=false)
     
     bt = get_bt(; model="cvm", comb_num=comb_num, display_msgs=display_msgs)
-    
-    id_cols = [:comb_num, :m, :m_comb_num]
-    opt_cols = opt_k_struct_cols(bt)
-    
-    
     optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), types=coltypes)
-    optDF = hcat(get_batch_comb_num(bt; display_msgs=display_msgs)[[:comb_num, :m_comb_num]], optDF)
-
-    cols_order = vcat(id_cols, [x for x in opt_cols if !(x in id_cols)])
-    return optDF[cols_order]
+    
+    return optDF
 end
 
 
-function compile_cvm_opt_results(; optdf_name::String=opt_k_struct_df_name, 
-                                  coltypes::Array{DataType,1}=vcat(fill(Float64, 27), 
-                                                                   [Bool], 
-                                                                   fill(Float64, 6)),
-                                  display_msgs::Bool=false,
-                                  save_results::Bool=true)
+function get_cvm_opt_results(; comb_num::Integer=0,
+                             firm_obj_fun::Symbol=:firm_value,
+                             m::Float64=0.,
+                             m_comb_num::Integer=0,
+                             display_msgs::Bool=true,
+                             dfname::String=soldf_name,
+                             replace_optdf::Bool=false,
+                             save_optdf::Bool=true,
+                             optdf_name::String=optdf_name)
     
+    bt, cvm = get_bt_cvm(;comb_num=comb_num,
+                         m=m, m_comb_num=m_comb_num,
+                         display_msgs=display_msgs)
+
+    
+    return optimal_cvm_capital_struct(bt, cvm;
+                                      firm_obj_fun=firm_obj_fun,
+                                      dfname=dfname,
+                                      replace_optdf=replace_optdf,
+                                      save_optdf=save_optdf,
+                                      optdf_name=optdf_name)
+end
+
+
+function compile_cvm_opt_results(; m::Float64=NaN,
+                                 firm_obj_fun::Symbol=:firm_value,
+                                 display_msgs::Bool=false,
+                                 dfname::String=soldf_name,
+                                 replace_optdf::Bool=false,
+                                 save_optdf::Bool=true,
+                                 optdf_name::String=optdf_name,
+                                 save_results::Bool=true,
+                                 opt_k_struct_df_name::String=opt_k_struct_df_name)
+
     bt = get_bt(; model="cvm", comb_num=1, display_msgs=display_msgs)
-    
-    optDFs = @time fetch(@spawn [cvm_results_loader(cn;
-                                                    optdf_name=optdf_name,
-                                                    coltypes=coltypes, 
-                                                    display_msgs=display_msgs) 
-                                 for cn in bt.bp.df[:comb_num]])
-    cvmOptDF= sort!(vcat(optDFs...), [:m, :m_comb_num])
-    
+
+    if !isnan(m)
+        comb_nums = bt.bp.df[abs.(bt.bp.df[:m] .- m) .< 1e-6, :comb_num]
+    else
+        comb_nums = bt.bp.df[:comb_num]
+    end
+
+    optDFs = @time fetch(@spawn [get_cvm_opt_results(; comb_num=comb,
+                                                     firm_obj_fun=firm_obj_fun,
+                                                     display_msgs=display_msgs,
+                                                     dfname=soldf_name,
+                                                     replace_optdf=replace_optdf,
+                                                     save_optdf=save_optdf,
+                                                     optdf_name=optdf_name)
+                                 for comb in comb_nums])
+
+    cvmOptDF = sort!(vcat(optDFs...), [:m, :m_comb_num])
+   
     if save_results
-        CSV.write(string(bt.mi.batch_res_path, "/", optdf_name, ".csv"), cvmOptDF)
+        println("Saving compiled results...")
+        extension = lowercase(string(firm_obj_fun))
+        dfname = string(opt_k_struct_df_name, "_", extension)
+
+        if isnan(m)
+            bt = set_par_dict(bt; comb_num=1, display_msgs=display_msgs)
+            bt = set_comb_res_paths(bt)
+            fpath = bt.mi.batch_res_path
+        else
+            bt = set_par_dict(bt; m=m, m_comb_num=1, display_msgs=display_msgs)
+            bt = set_comb_res_paths(bt)
+            fpath = bt.mi.maturity_path
+        end
+        CSV.write(string(fpath, "/", dfname, ".csv"), cvmOptDF)
     end
     
     return cvmOptDF
 end
 
 
-function load_cvm_opt_results_df(; optdf_name::String=opt_k_struct_df_name, 
+function load_cvm_opt_results_df(; m::Float64=NaN,
+                                 optdf_name::String=opt_k_struct_df_name,
+                                 firm_obj_fun::Symbol=:firm_value,
                                  coltypes::Array{DataType,1}=cvm_opt_k_struct_df_coltypes,
-                                 display_msgs::Bool=false)
+                                 display_msgs::Bool=false,
+                                 opt_k_struct_df_name::String=opt_k_struct_df_name)
     
     bt = get_bt(; model="cvm", comb_num=1, display_msgs=display_msgs)
-    println("Loading optimal results dataframe...")
-    return CSV.read(string(bt.mi.batch_res_path, "/", opt_k_struct_df_name, ".csv"); types=coltypes)
+
+    extension = lowercase(string(firm_obj_fun))
+    dfname = string(opt_k_struct_df_name, "_", extension)
+    if isnan(m)
+        bt = set_par_dict(bt; comb_num=1, display_msgs=display_msgs)
+        bt = set_comb_res_paths(bt)
+        fpath = bt.mi.batch_res_path
+    else
+        bt = set_par_dict(bt; m=m, m_comb_num=1, display_msgs=display_msgs)
+        bt = set_comb_res_paths(bt)
+        fpath = bt.mi.maturity_path
+    end
+
+    try 
+        println("Loading optimal results dataframe...")
+        return CSV.read(string(fpath, "/", dfname, ".csv"), types=cvm_opt_k_struct_df_coltypes)
+    catch
+        println("Unable to load optimal results dataframe. Recomputing...")
+        return compile_cvm_opt_results(; m=m,
+                                       firm_obj_fun=firm_obj_fun,
+                                       opt_k_struct_df_name=opt_k_struct_df_name)
+    end
 end
+
+
+
+
+    
+#     println("Loading optimal results dataframe...")
+#     optDF = CSV.read(string(bt.mi.batch_res_path, "/", opt_k_struct_df_name, ".csv"); types=coltypes)
+
+#     if !(:MBR in names(optDF))
+#         optDF[:MBR] = get_mbr(unique(optDF[:V0])[1], optDF[:debt], optDF[:equity])
+#     end
+#     return optDF
+# end

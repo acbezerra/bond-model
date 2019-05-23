@@ -23,11 +23,11 @@ end
 end
 
 mutable struct JointFirms
-    jks::JointKStruct
+    jks #::JointKStruct
     sf::Firm
     rf::Firm
-    cvm_bt::BatchStruct
-    svm_bt::BatchStruct
+    cvm_bt
+    svm_bt
     cvmdf::DataFrame
     svmdf::DataFrame
 end

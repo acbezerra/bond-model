@@ -13,15 +13,16 @@ module JointEq
 
 using Distributed
 using Dierckx
-
 using Parameters
 using Printf
 using DataFrames
 using CSV
+using Dates
 
 using ModelObj: set_opt_k_struct,
                 Firm, grid_creator,
-                get_obj_model
+    get_obj_model,
+    set_opt_k_struct
 
 using AnalyticFunctions: get_cvm_vb,
                          get_param,
@@ -54,9 +55,19 @@ using Batch: BatchObj,
              interp_values,
              svm_param_values_dict,
              common_params,
-             _params_order
+             _params_order,
+             comb_folder_dict,
+    str_format_fun,
+    set_par_dict,
+    comb_folder_dict,
+    form_main_dir_path,
+    main_dir, res_dir
 
-using FullInfoEq: set_full_information_vb!, find_optimal_bond_measure
+
+using FullInfoEq: set_full_information_vb!,
+    find_optimal_bond_measure,
+    find_full_info_vb
+
 
 # Structs, Objects and Constructor Methods #################
 include("_joint_objects/_joint_structs.jl")
@@ -74,6 +85,9 @@ include("_joint_objects/_joint_k_struct_funs.jl")
 include("_joint_auxiliary/_joint_functions.jl")
 include("_joint_auxiliary/_joint_file_methods.jl")
 include("_joint_auxiliary/_joint_dataframe_methods.jl")
+
+# Set and Get Methods
+include("_joint_auxiliary/_joint_set_get_dirs.jl")
 # ##########################################################
 
 include("_joint_pricing.jl")

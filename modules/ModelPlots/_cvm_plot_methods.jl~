@@ -1,0 +1,174 @@
+
+
+
+function cvm_data_handler(pt)
+    kappa_vals = unique(pt.cvm_data[:kappa])
+    sigmal_vals = unique(pt.cvm_data[:sigmal])
+    iota_vals = [ i*10^4 for i in unique(pt.cvm_data[:iota]) if i < maximum(pt.cvm_data[:iota])]
+    # scalarMap = Seaborn.color_palette("cool", n_colors=size(sigma_vals, 1))
+    scalarMap = Seaborn.get_cmap("cool", size(sigmal_vals, 1))
+    l_styles = ["-" , ":", "--", "-."]
+
+    return kappa_vals, sigmal_vals, iota_vals, scalarMap, l_styles
+end
+
+
+function cvm_single_axis_plot(pt, fig, plot_sub_num::Int64, varname::Symbol; legend::Bool=true)
+    (kappa_vals, sigmal_vals,
+     iota_vals, scalarMap, l_styles) = cvm_data_handler(pt)
+
+    ax = fig.add_subplot(plot_sub_num)
+    for j in 1:size(sigmal_vals, 1)
+        colorVal = scalarMap(j)
+        pos = .&(abs.(pt.cvm_data[:kappa] .- kappa_vals[1]) .< 1e-6,
+                 abs.(pt.cvm_data[:sigmal] .- sigmal_vals[j]) .< 1e-6)
+
+        if (abs.(sigmal_vals[j] .- minimum(sigmal_vals)) .< 1e-6)
+            pos = .&(pos, [(x .* 10^4 in iota_vals) for x in pt.cvm_data[:iota]])
+                     
+            ax.plot(pt.cvm_data[pos, :iota] .* 10^4,
+                    pt.cvm_data[pos, varname],
+                    linewidth=1.1,
+                    linestyle=l_styles[j],
+                    color=colorVal,
+                    label=sigmal_vals[j])
+        else
+            firm_val = pt.cvm_data[pos, varname][1]
+            ax.axhline(y=firm_val,
+                       linewidth=1.1,
+                       linestyle=l_styles[j],
+                       color=colorVal,
+                       label=sigmal_vals[j],
+                       xmin=.01, xmax=.99)
+         end
+    end
+    
+    if legend
+        ax.legend(loc=0,
+                   title="Volatility \$\\sigma\$",
+                   ncol=1,
+                   frameon=true,
+                   shadow=true,
+                   framealpha=.85,
+                   edgecolor="white",
+                   facecolor="white",
+                   fancybox=true)
+        # bbox_to_anchor=(.95, 0.85),
+
+        ax.get_legend().get_title().set_color("#34495E")
+    end
+    # Axes' Labels:
+    # if ylabel:
+    #     ax.set_ylabel('Values for $\sigma = \overline{\sigma}$ and $\iota\geqslant 0$',
+    #                    fontsize=12, labelpad=10)
+    ax.set_xlabel("Risk Management Cost, \$\\iota\$ (b.p.)",
+                   fontsize=12, labelpad=10)
+    return ax
+end
+
+
+function cvm_double_axes_plot(pt, fig,
+                              plot_sub_num::Int64, varname::Symbol,
+                              y1label::Bool=true, y2label::Bool=true,
+                              legend::Bool=true)
+    (kappa_vals, sigmal_vals,
+     iota_vals, scalarMap, l_styles) = cvm_data_handler(pt)
+
+    ax1 = fig.add_subplot(plot_sub_num)
+    ax2 = ax1.twinx()
+    for j in 1:size(sigmal_vals, 1)
+        colorVal = scalarMap(j)
+        pos = .&(abs.(pt.cvm_data[:kappa] .- kappa_vals[1]) .< 1e-6,
+                 abs.(pt.cvm_data[:sigmal] .- sigmal_vals[j]) .< 1e-6)
+
+        if (abs.(sigmal_vals[j] .- minimum(sigmal_vals)) .< 1e-6)
+            pos = .&(pos, [(x .* 10^4 in iota_vals) for x in pt.cvm_data[:iota]])
+
+
+            ax1.plot(pt.cvm_data[pos, :iota] .* 10^4,
+                     pt.cvm_data[pos, varname],
+                     linewidth=1.1,
+                     linestyle=l_styles[j],
+                     color=colorVal,
+                     label=sigmal_vals[j])
+        else
+            firm_val = pt.cvm_data[pos, varname][1]
+            ax2.axhline(y=firm_val,
+                        linewidth=1.1,
+                        linestyle=l_styles[j],
+                        color=colorVal,
+                        label=sigmal_vals[j],
+                        xmin=.01, xmax=.99)
+        end
+    end
+    
+
+    if legend
+        # handles,labels = ax1.get_legend_handles_labels()
+        handles, labels = [ ], [ ]
+        # for ax in fig.axes:
+        for ax in [ax1, ax2]
+            for (h ,l) in zip(ax.get_legend_handles_labels()...)
+                push!(handles, h)
+                push!(labels, l)
+            end
+        end
+        
+        ax1.legend(handles, labels,
+                   loc=0,
+                   title="Volatility \$\\sigma\$",
+                   ncol=1,
+                   frameon=true,
+                   shadow=true,
+                   framealpha=.85,
+                   edgecolor="white",
+                   facecolor="white",
+                   fancybox=true)
+                   # bbox_to_anchor=(.95, 0.85),
+    
+        ax1.get_legend().get_title().set_color("#34495E")
+    end
+    
+    # Axes' Labels:
+    if y1label
+        ax1.set_ylabel(string("Values for \$\\sigma = \\underline{\\sigma}\$",
+                              " and \$\\iota \\geq 0\$"), usetex=true,
+                       fontsize=12, labelpad=10)
+    end
+        
+    if y2label
+        ax2.set_ylabel(string("Values for \$\\sigma > \\underline{\\sigma}\$",
+                              " and \$\\iota = 0\$"), usetex=true,
+                       fontsize=12, labelpad=10)
+    end
+        
+    ax1.set_xlabel("Risk Management Cost, \$\\iota\$ (b.p.)",
+                   fontsize=12, labelpad=10)
+
+    ax2.grid(nothing)
+
+    return ax1
+
+end
+
+
+function plot_cvm_optimal_solutions(pt, var::Symbol;
+                                    figaspect::Float64=.55,
+                                    facecolor::String="w",
+                                    return_fig::Bool=true)
+
+    Seaborn.set_style("darkgrid")
+    fig = PyPlot.figure(figsize=PyPlot.figaspect(figaspect), facecolor=facecolor)
+    if !(var in [:firm_value, :MBR])
+        ax1 = ModelPlots.cvm_double_axes_plot(pt, fig, 111, var)
+    else
+        ax1 = ModelPlots.cvm_single_axis_plot(pt, fig, 111, var)
+    end
+    
+    ax1.set_title(string("Constant Volatility Model Optimal ", vartitles[var]), fontsize=14)
+    PyPlot.tight_layout()
+
+    if return_fig
+        return fig
+    end
+end

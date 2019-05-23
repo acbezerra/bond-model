@@ -18,7 +18,7 @@ function svm_interp_smooth_surface(pt, fixed_params::Dict{Symbol,Float64},
                                    smooth::Bool=true)
 
     # Variables
-    xy_vars = [:m, :xi, :kappa, :lambda, :sigmal, :sigmah]
+    xy_vars = [:kappa, :lambda, :sigmah]
 
     kappa_vec = unique(pt._svm_surf[:kappa])
     sigmah_vec = unique(pt._svm_surf[:sigmah])
@@ -53,23 +53,23 @@ function svm_interp_smooth_surface(pt, fixed_params::Dict{Symbol,Float64},
     z_val = Array{Float64}(undef, size(x_vec, 1) .* size(y_vec, 1), 1)
 
     # Boolean Indexer for Fixed Parameter Values:            
-    pos_loc = [((pt._svm_surf[x] .- fixed_params[x]).^ 2 .< 1e-6) 
+    pos_loc = [(abs.(pt._svm_surf[x] .- fixed_params[x]) .< 1e-6) 
                                 for x in keys(fixed_params)]
     bool_loc =  .&(pos_loc...) # sum(pos_loc) .== size(pos_loc, 1)
 
     for i in 1:size(comb, 1)
         if .&((:kappa in xy_list), (:sigmah in xy_list))
-            value = pt._svm_surf[.&((pt._svm_surf[:kappa] .== comb[i, 1]),
-                                    (pt._svm_surf[:sigmah] .== comb[i, 2]),
+            value = pt._svm_surf[.&((abs.(pt._svm_surf[:kappa] .- comb[i, 1]) .< 1e-6),
+                                    (abs.(pt._svm_surf[:sigmah] .- comb[i, 2]) .< 1e-6),
                                     bool_loc), z_var][1]
         elseif .&((:kappa in xy_list), (:lambda in xy_list))
-            value = pt._svm_surf[.&((pt._svm_surf[:kappa] == comb[i][1]),
-                                    (pt._svm_surf[:lambda] == comb[i][2]),
-                                     bool_loc), z_var]
+            value = pt._svm_surf[.&((abs.(pt._svm_surf[:kappa] .- comb[i, 1]) .< 1e-6),
+                                    (abs.(pt._svm_surf[:lambda] .- comb[i, 2]) .< 1e-6),
+                                     bool_loc), z_var][1]
         else
-            value = pt._svm_surf[.&((pt._svm_surf[:lambda] == comb[i][1]),
-                                    (pt._svm_surf[:sigmah] == comb[i][2]),
-                                    bool_loc), z_var]
+            value = pt._svm_surf[.&((abs.(pt._svm_surf[:lambda] .- comb[i, 1]) .< 1e-6),
+                                    (abs.(pt._svm_surf[:sigmah] .- comb[i, 2]) .< 1e-6),
+                                    bool_loc), z_var][1]
         end
 
         # Keep in mind that not all combinations of x_vec and
@@ -137,7 +137,7 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     # ############################################
     # ############### Axis Format: ###############
     # ############################################
-    title_list = [string("\$", pt.xylabels[x][1], "=\$ %", pt.xylabels[x][2]) 
+    title_list = [string("\$", pt.xylabels[x][1], "=\$ ", pt.xylabels[x][2]) 
                         for x in keys(pt.xylabels) if !(x in xy_list)]
     title_values = [fixed_params[x] for x in keys(pt.xylabels) if !(x in xy_list)]                                        
      
@@ -148,9 +148,9 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     # Localize before changing kappa to basis points:
     cond = true
     for key in keys(fixed_params)
-        cond = .&(cond, svmdf[key] .== fixed_params[key])
+        cond = .&(cond, (abs.(svmdf[key] .- fixed_params[key]) .< 1e-6))
     end
-    
+
     # Sigmah on Y-axis, Kappa on X-axis:
     # if Sigmah & Lambda -> lambda on X-Axis
     # Adjust value of Kappa
@@ -161,7 +161,7 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     elseif .&((:sigmah in xy_list), (:lambda in xy_list))
         cols = vcat([:sigmah, :lambda], [z_var])
         # Kappa in Basis Points
-        fixed_params[:kappa] = convert.(Int64, fixed_params[:kappa] .* 1e4)
+        # fixed_params[:kappa] = #convert.(Int64, fixed_params[:kappa] .* 1e4)
     else
         cols = vcat([:lambda, :kappa], [z_var])
         # Kappa in Basis Points:
@@ -195,7 +195,7 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     # ############### TITLE ###############
     ax_title = " "
     if make_title | add_title
-        str_format_fun(a, b) = @eval @sprintf($a, $b)
+        # str_format_fun(a, b) = @eval @sprintf($a, $b)
         formatted_var_string = join([str_format_fun(title_list[i], 
                                                     title_values[i]) 
                                      for i in 1:size(title_list, 1)], ", ")
@@ -216,11 +216,12 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
                           xy_list::Array{Symbol,1},
                           z_var::Symbol,
                           fixed_params::Dict{Symbol,Float64};
+                          title_params_order::Array{Symbol,1}=svm_plots_title_params_order,
                           plt_cmap::String="viridis",
                           seaborn_style::String="darkgrid",
                           make_title=true, add_title=false,
-                          zpad=10, view_elev=25., view_azim=210,
-                          xylabels::Array{Symbol,1}=[:m, :xi, :kappa, :lambda, :sigmal, :sigmah])
+                          zpad=10, view_elev=25., view_azim=210)
+                          #xylabels::Array{Symbol,1}=[:mu_b, :m, :xi, :kappa, :lambda, :sigmal, :sigmah])
     # Documentation available at: https://matplotlib.org/mpl_toolkits/mplot3d/api.html
 
     # ATTENTION! -> only adjust kappa after computing zv:
@@ -230,9 +231,10 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
     elseif xy_list[1] == :kappa
         yv = convert.(Int64, yv .* 10^4)
     end
-    
-    if :kappa in keys(fixed_params)
-        fixed_params[:kappa] = convert.(Int64, fixed_params[:kappa] .* 10^4)
+
+    cp_fixed_params = deepcopy(fixed_params)
+    if :kappa in keys(cp_fixed_params)
+        cp_fixed_params[:kappa] = convert.(Int64, cp_fixed_params[:kappa] .* 10^4)
     end
     # ############################################
     # ############### Axis Format: ###############
@@ -243,13 +245,13 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
     if z_var == :c
         major_zticks = range(minimum(zv), stop=maximum(zv), length=7)
     end
-    
-    xy_format = [[string("\$",  pt.xylabels[x][1], "\$"), pt.xylabels[x][2]] 
-                    for x in xylabels if (x in xy_list)]
 
-    title_list = [string("\$", pt.xylabels[x][1], "=\$ %", pt.xylabels[x][2]) 
-                        for x in xylabels if !(x in xy_list)]
-    title_values = [fixed_params[x] for x in xylabels if !(x in xy_list)]
+    xy_format = [[string("\$",  pt.xylabels[x][1], "\$"), pt.xylabels[x][2]] 
+                    for x in keys(pt.xylabels) if (x in xy_list)]
+
+    title_list = [string("\$", pt.xylabels[x][1], "=\$ ", pt.xylabels[x][2]) 
+                        for x in title_params_order if !(x in xy_list)]
+    title_values = [cp_fixed_params[x] for x in title_params_order if !(x in xy_list)]
 
     if isempty(seaborn_style)
         Seaborn.reset_orig()
@@ -266,13 +268,13 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
     ax.invert_xaxis()
     ax.xaxis.set_rotate_label(false)  # disable automatic rotation
     ax.set_xlabel(xy_format[1][1], labelpad=10, rotation=0)
-    ax.xaxis.set_major_formatter(PyPlot.matplotlib.ticker.FormatStrFormatter(string("%", xy_format[1][2])))
+    ax.xaxis.set_major_formatter(PyPlot.matplotlib.ticker.FormatStrFormatter(xy_format[1][2]))
     ax.set_xticks(major_xticks)
 
     # Customize the y axis
     ax.yaxis.set_rotate_label(false)  # disable automatic rotation
     ax.set_ylabel(xy_format[2][1], labelpad=10, rotation=0)
-    ax.yaxis.set_major_formatter(PyPlot.matplotlib.ticker.FormatStrFormatter(string("%", xy_format[2][2])))
+    ax.yaxis.set_major_formatter(PyPlot.matplotlib.ticker.FormatStrFormatter(xy_format[2][2]))
     ax.set_yticks(major_yticks)
 
     # Customize the z axis
@@ -287,7 +289,7 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
     # ############### TITLE ###############
     ax_title = " "
     if make_title | add_title
-        str_format_fun(a, b) = @eval @sprintf($a, $b)
+        # str_format_fun(a, b) = @eval @sprintf($a, $b)
         formatted_var_string = join([str_format_fun(title_list[i], 
                                                     title_values[i]) 
                                      for i in 1:size(title_list, 1)], ", ")
@@ -308,17 +310,18 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
 end
 
 
-function svm_heat_surf_plot_path_fname(pt, m::Float64, xy_list::Array{Symbol,1}, z_var::Symbol, 
-                                       fixed_params::Dict{Symbol,Float64}; 
+function svm_heat_surf_plot_path_fname(pt, xy_list::Array{Symbol,1}, z_var::Symbol, 
+                                       fixed_params::Dict{Symbol,Float64};
+                                       title_params_order::Array{Symbol,1}=svm_plots_title_params_order,
                                        main_dir::String=main_dir,
                                        plots_dir::String=plots_dir,
-                                       graph_dir::String=graph_dir,
+                                       graph_dir::String=heat_surf_graph_dir,
                                        mat_dir_prefix::String=mat_dir_prefix)
     
     # Functions to Format Numeric-to-String
-    str_format_fun(a::String,b::Float64) = @eval @sprintf($a, $b)
-    par_val_printer(k::Symbol) = (k != :kappa) ? string(k, "_%.2f") : string(k, "_(bp)_%.0f")
-    par_val_adj(k::Symbol, val::Float64) = (k != :kappa) ? val : val * 1e4
+    # str_format_fun(a::String,b::Float64) = @eval @sprintf($a, $b)
+    # par_val_printer(x::Symbol) = !(x in [:iota, :kappa]) ? string(x, "_", pt.xylabels[x][2]) : string(x, "_(bp)_", pt.xylabels[x][2])
+    # par_val_adj(x::Symbol, val::Float64) = !(x in [:iota, :kappa]) ? val : val * 1e4
     
     # Paths to Plot ##########################################
     
@@ -326,24 +329,28 @@ function svm_heat_surf_plot_path_fname(pt, m::Float64, xy_list::Array{Symbol,1},
     main_dir_path = form_main_dir_path(main_dir)
     
     # Maturity Directory
-    mat_dir = string(mat_dir_prefix, str_format_fun("%.1f", m))
+    mat_dir = string(mat_dir_prefix, str_format_fun(pt.xylabels[:m][2], fixed_params[:m]))
 
     # Get Graph Type 
     graph_type = ""
     graph_sub_folder = ""
     if .&((:kappa in xy_list), (:sigmah in xy_list))
         graph_type = "kappa_sigmah"
-        graph_sub_folder = str_format_fun("lambda_%.2f", fixed_params[:lambda])
+        graph_sub_folder = str_format_fun(string("lambda_", pt.xylabels[:lambda][2]),
+                                          fixed_params[:lambda])
     elseif .&((:kappa in xy_list), (:lambda in xy_list))
         graph_type = "kappa_lambda"
-        graph_sub_folder = str_format_fun("sigmah_%.2f", fixed_params[:sigmah])
+        graph_sub_folder = str_format_fun(string("sigmah_", pt.xylabels[:sigmah][2]),
+                                          fixed_params[:sigmah])
     else
         graph_type = "lambda_sigmah"
-        graph_sub_folder = str_format_fun("kappa_(bp)_%.0f", fixed_params[:kappa] * 10^4)
+        graph_sub_folder = str_format_fun(string("kappa_(bp)_", pt.xylabels[:kappa][2]),
+                                          fixed_params[:kappa] * 10^4)
     end
     
-    # Form Paths
-    dirs = [plots_dir, graph_dir, mat_dir, graph_type, graph_sub_folder]
+    # Form Paths ##############################################
+    dirs = [plots_dir, "SVM", graph_dir, mat_dir,
+            graph_type, graph_sub_folder]
     graphs_path = main_dir_path
     for dir in dirs
         graphs_path = string(graphs_path, "/", dir)
@@ -351,22 +358,28 @@ function svm_heat_surf_plot_path_fname(pt, m::Float64, xy_list::Array{Symbol,1},
             mkdir(graphs_path)
         end
     end
-    ###########################################################
+    # ##########################################################
 
-    # Filename ################################################
+    # Filename #################################################
+    if isempty(title_params_order)
+        title_params_order = keys(fixed_params)
+    end
+
+    title_params = [x for x in title_params_order if x in keys(fixed_params)]
     par_values_str = join([str_format_fun(par_val_printer(k), 
                            par_val_adj(k, fixed_params[k])) 
-                      for k in keys(fixed_params)], "__")
-    file_name = string(z_var, "_", par_values_str)
+                      for k in title_params], "__")
+    file_name = string("svm_", obj_fun_dict[Symbol(pt.svm_data[1, :obj_fun])],
+                       "_", z_var, "_", par_values_str)
 
     return [graphs_path, file_name]
 end
 
 
-
 function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1}, 
                                z_var::Symbol, 
                                fixed_params::Dict{Symbol,Float64};
+                               title_params_order::Array{Symbol,1}=svm_plots_title_params_order,
                                save_fig::Bool=true,
                                elev::Float64=25.,
                                azim::Float64=210.,
@@ -380,8 +393,10 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
                                ax1_dist::Float64=8.5,
                                axs_wspace::Float64=.1,
                                cbaxes::Array{Float64,1}=[.975, 0.15, 0.015, 0.675],
-                               sup_title_x::Float64=.575,
-                               return_fig::Bool=true)
+                               return_fig::Bool=true,
+                               fig_dpi::Int64=400,
+                               graph_format::String="eps")
+# sup_title_x::Float64=.575,
     
     # ###################################################
     # ################### MULTI PLOT ####################
@@ -405,6 +420,7 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
     # the list of variables to the plot_surface function, use var_axes list:
     surf, ax1, fig_title = svm_plot_surface(pt, ax1, xyz[:,1], xyz[:,2], xyz[:,3], 
                                             xy_list, z_var, fixed_params;
+                                            title_params_order=title_params_order,
                                             plt_cmap=plt_cmap, 
                                             seaborn_style=seaborn_style,
                                             make_title=true, 
@@ -412,7 +428,6 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
                                             zpad=zpad, view_elev=elev, view_azim=azim)
 
     # Set the background color of the pane YZ
-    #ax1.w_xaxis.set_pane_color(ColorMap((213, 216, 220) ./  255.))
     ax1.w_xaxis.set_pane_color(PyPlot.matplotlib.colors.hex2color("#d5d8dc"))
 
     # Add a color bar which maps values to colors.
@@ -437,15 +452,16 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
                               reverse_y_axis=heat_reverse_y)
     # ###################################################
 
-    fig.suptitle(fig_title, fontsize=14, x=sup_title_x)
+    fig.suptitle(fig_title, fontsize=14) #, x=sup_title_x)
     PyPlot.subplots_adjust(wspace=axs_wspace)
     #PyPlot.show()
 
     if save_fig
         m = unique(pt._svm_surf[:m])[1]
-        folder_path, file_name = svm_heat_surf_plot_path_fname(pt, m, xy_list, 
-                                                               z_var, fixed_params)
-        PyPlot.savefig(string(folder_path, "/", file_name, ".svg"), dpi=400)
+        folder_path, file_name = svm_heat_surf_plot_path_fname(pt, xy_list, 
+                                                               z_var, fixed_params;
+                                                               title_params_order=title_params_order)
+        PyPlot.savefig(string(folder_path, "/", file_name, ".", graph_format), dpi=fig_dpi, format=graph_format)
     end
 
     if return_fig

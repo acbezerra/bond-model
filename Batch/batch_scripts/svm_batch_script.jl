@@ -84,7 +84,6 @@ println("Managing results directories...")
 # Create Directories
 bt = Batch.mk_comb_res_dirs(bt)
 
-
 if c_pos > length(bt.coupon_grid)
     println("Computations will be done for all coupon values!")
     c_pos = 1

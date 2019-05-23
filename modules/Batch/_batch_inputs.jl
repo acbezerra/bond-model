@@ -9,13 +9,31 @@ coupon_dir_prefix = "c_"
 batch_file_name = "batch_obj"
 
 common_params = Dict{Symbol, Float64}(:V0 => 100.,
-                                            :alpha => .6,
-                                            :pi => .27,
-                                            :r => .08)
+                                      :alpha => .6,
+                                      :pi => .27,
+                                      :r => .08)
 
 
 _params_order = [:mu_b, :m, :xi, :kappa, :gross_delta,
                  :lambda, :iota, :sigmal, :sigmah]
+
+# #######################################################
+# ################# Combination Folders #################
+# #######################################################
+# Notice that mu_b is set to 1.
+comb_folder_dict = Dict{Symbol,Array{String,1}}(:mu_b => ["mub_", "%.2f"],
+                                                :m => ["m_", "%.2f"],
+                                                :c => ["c_", "%.2f"],
+                                                :xi => ["__xi_", "%.2f"], 
+                                                :kappa => ["__kappa_", "%.2f", "_bp"],
+                                                :gross_delta => ["__gross_delta_", "%.2f", "_bp"], 
+                                                :iota => ["__iota_", "%.2f", "_bp"],
+                                                :lambda => ["__lambda_", "%.3f"],
+                                                :sigmal => ["__sigmal_", "%.3f"],
+                                                :sigmah => ["__sigmah_", "%.3f"])
+
+
+# #######################################################
 
 
 # Define Parameter Combinations:
@@ -27,7 +45,7 @@ cvm_sol_fn_prefix = "cvm_res"
 
 # Parameters
 cvm_param_values_dict = Dict{Symbol,Array{Float64,1}}(:mu_b => [1.],
-                                                      :m => [1., 3., 5., 7., 10.],
+                                                      :m => [1.], #, 3., 5., 7., 10.],
                                                       :xi => [1.],
                                                       :kappa => [k * 1e-4 for k in [25, 50, 100, 150]],
                                                       :gross_delta => [.02],
@@ -39,7 +57,7 @@ cvm_param_values_dict = Dict{Symbol,Array{Float64,1}}(:mu_b => [1.],
 
 # Coupon Values Grid:
 cvm_c_step = .5
-cvm_coupon_grid = vcat([.25, .5], range(1, stop=12 + cvm_c_step, step=cvm_c_step))
+cvm_coupon_grid = vcat([.25, .5], range(1, stop=25 + cvm_c_step, step=cvm_c_step))
 
 # #######################################################
 # ######################### SVM #########################
@@ -121,7 +139,7 @@ equity_vars = [:eq_deriv,
                :eq_min_val,    
                :eq_negative,     
                :eq_vb]
-share_values = [:debt, :equity, :firm_value, :leverage, :ROE]
+share_values = [:debt, :equity, :firm_value, :leverage, :MBR]
 dfcols = vcat(main_params, k_struct_params, debt_vars[1],
               equity_vars, debt_vars[2:end], share_values, fixed_params)
 
@@ -133,6 +151,7 @@ dfcols = vcat(main_params, k_struct_params, debt_vars[1],
 soldf_name = "soldf"
 optdf_name = "optdf"
 opt_k_struct_df_name="opt_k_structs"
-opt_k_struct_df_coltypes=vcat(Int64, fill(Float64, 33), Bool, Float64)
-cvm_opt_k_struct_df_coltypes=vcat([Int64, Float64, Int64],
+#comb_opt_k_struct_df_coltypes=vcat(String, fill(Float64, 33), Bool, Float64)
+opt_k_struct_df_coltypes=vcat(Int64, Float64, Int64, String, fill(Float64, 32), Bool, Float64)
+cvm_opt_k_struct_df_coltypes=vcat([Int64, Float64, Int64, String],
                                   fill(Float64, 32))

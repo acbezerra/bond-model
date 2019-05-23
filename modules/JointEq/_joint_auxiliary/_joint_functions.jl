@@ -206,3 +206,11 @@ function check_risky_firm_dict(bts, idr)
     end
     return idr, false
 end
+
+
+function round_value(x::Float64)
+    xr_vec = [floor(x), (ceil(x) + floor(x))/2, ceil(x)]
+    diffs = [x-xr_vec[1], abs(x-xr_vec[2]), xr_vec[3] - x]    
+    return xr_vec[argmin(diffs)]
+end
+

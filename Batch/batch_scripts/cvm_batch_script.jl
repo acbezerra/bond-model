@@ -26,6 +26,8 @@ m_comb_num = parse(Int, ARGS[1])
 
 # ###############################################
 
+firm_obj_fun=:MBR
+
 # Start Timer
 tic = time_ns()
 
@@ -44,9 +46,11 @@ for m in Batch.cvm_param_values_dict[:m]
 
     # Solve for Optimal Capital Structure
     optdf = Batch.optimal_cvm_capital_struct(bt, cvm;
+                                             firm_obj_fun=firm_obj_fun,
                                              df=soldf,
-                                             save_results=true,
-                                             opt_k_struct_df_name=Batch.opt_k_struct_df_name)
+                                             save_optdf=true,
+                                             optdf_name=Batch.optdf_name)
+
 end
 
 println(string("Total Script Run Time: ", (time_ns() - start_tic)/1e9/60., " minute(s)."))

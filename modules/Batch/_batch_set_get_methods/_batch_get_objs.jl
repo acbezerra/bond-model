@@ -45,28 +45,38 @@ function get_bt_svm(;comb_num::Integer=0,
                 comb_num=comb_num,
                 m=m, m_comb_num=m_comb_num,
                 bt=bt, display_msgs=display_msgs)
+
+    # Create Directories
+    mk_comb_res_dirs(bt)
     
     local batch_obj_exists = false
     try
         # batch_obj_exists = check_batch_results(bt)
-        batch_obj_exists = check_batch_file(bt)
-    catch
-        # println("Unable to load Batch object file. Recomputing... ")
-        println("Unable to locate Batch object file. Recomputing...")
-    end
-    
-    println(string("Batch object exists: ", batch_obj_exists))
-
-    # Check if results exist
-    if batch_obj_exists
-        # Load SVM object
+        # batch_obj_exists = check_batch_file(bt)
         println("Loading SVM object...")
-        # svm = load_batch_results(bt)["svm"]
         svm = load_bpr_surfs(bt)
         
         # Check if Bond Pricing Surfaces exist
         surfs_exist = check_bpr_surfaces(svm)
-    else
+        batch_obj_exists = true
+    catch
+        # println("Unable to load Batch object file. Recomputing... ")
+        println("Unable to locate Batch object file. Recomputing...")
+        batch_obj_exists = false
+    end
+
+    
+    println(string("Batch object exists: ", batch_obj_exists))
+    # Check if results exist
+    if !batch_obj_exists
+    #     # Load SVM object
+    #     println("Loading SVM object...")
+    #     # svm = load_batch_results(bt)["svm"]
+    #     svm = load_bpr_surfs(bt)
+        
+    #     # Check if Bond Pricing Surfaces exist
+    #     surfs_exist = check_bpr_surfaces(svm)
+    # else
         # Create SVM object
         svm = firm_constructor(bt.mi._svm_dict; model="svm")
         surfs_exist = false

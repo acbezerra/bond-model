@@ -83,4 +83,13 @@ function get_param(svm, pname::Symbol)
 end
 
 
+function get_leverage(debt::Union{Float64, Array{Float64, 1}},
+                      equity::Union{Float64, Array{Float64, 1}})
+    return (debt ./ (debt .+ equity)) .* 100
+end
 
+function get_mbr(V0::Float64,
+                 debt::Union{Float64, Array{Float64, 1}},
+                 equity::Union{Float64, Array{Float64, 1}})
+    return (equity ./ (V0 .- debt) .- 1.) .* 100
+end
