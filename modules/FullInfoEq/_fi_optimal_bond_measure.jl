@@ -10,7 +10,7 @@ function bond_measure_full_info_vb(svm, jks, mu_b::Float64;
     setfield!(jks2, :mu_b, mu_b)
 
     return find_full_info_vb(svm, jks2;
-                             lb=.75, ub=ub,
+                             lb=lb, ub=ub,
                              vbN=15, N=vbN2)
 end
 

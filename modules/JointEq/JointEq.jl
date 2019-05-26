@@ -95,6 +95,7 @@ include("_joint_pricing.jl")
 # Equilibrium Methods -> Equity, Vb, mu_b Functions ########
 include("_joint_equilibrium/_joint_eq_fin_diff.jl")
 include("_joint_equilibrium/_joint_optimal_vb.jl")
+include("_joint_equilibrium/_joint_leverage_functions.jl")
 include("_joint_equilibrium/_joint_optimal_bond_measure.jl")
 # ##########################################################
 

@@ -57,11 +57,33 @@ function compute_joint_eq_vb_results(jf, jks;
                                    lb=lb1, ub=ub1,
                                    vbN=vbN1)
 
+    
+    # Set vbl bounds abd form vbl grid ######################################
+    s_vbh = NaN
+    if get_obj_model(jf.sf) == "svm"
+        s_vbh = get_cvm_vb(jf.sf, jf.sf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+    end
+    
+    r_vbh = NaN
+    if get_obj_model(jf.rf) == "svm"
+        r_vbh = get_cvm_vb(jf.rf, jf.rf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+    end
+    vbh_max = maximum([x for x in [s_vbh, r_vbh] if !isnan(x)])
+    vbh_min = minimum([x for x in [s_vbh, r_vbh] if !isnan(x)])
+    
     # Form Grid of VB candidates
     vbl_min = minimum(x -> isnan(x) ? Inf : x, [jks.fi_sf_vb, jks.fi_rf_vb, vbl_min])
     vbl_max = maximum(x -> isnan(x) ? -Inf : x, [jks.fi_sf_vb, jks.fi_rf_vb, vbl_max])
-    vbl_grid = range(lb2 * vbl_min, stop= ub2 * vbl_max, length=vbN2)
 
+    # vbh_max / vbl_min < jf.rf.bi.vbhlmax
+    vbl_min = maximum([lb2 * vbl_min, vbh_max/ jf.rf.bi.vbhlmax])
+
+    # vbh_min / vbl_max > jf.rf.bi.vbhlmin
+    vbl_max = minimum([ub2 * vbl_max, vbh_min/ jf.rf.bi.vbhlmin])
+    
+    # Form vbl grid
+    vbl_grid = range(vbl_min, stop= vbl_max, length=vbN2)
+    # #######################################################################
 
 
     # ####################################################################
@@ -131,7 +153,7 @@ function compile_opt_vb_results(jf, jks, sfdf::DataFrame, rfdf::DataFrame)
                                            jks.fi_sf_vb,
                                            jks.fi_rf_vb; 
                                            sf_defaults_first=true)
-    s2 = JointEq.joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    s2 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
     
     # sfdf = vcat([s1, s2]...)
     # ###############################################################
@@ -144,7 +166,7 @@ function compile_opt_vb_results(jf, jks, sfdf::DataFrame, rfdf::DataFrame)
                                            jks.fi_sf_vb,
                                            jks.fi_rf_vb; 
                                            sf_defaults_first=false)   
-    r1 = JointEq.joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    r1 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
 
     # vbl that sets E'_r(vbl) to zero   
     sf_vb, rf_vb = get_type_contingent_vbs(opt_rf_vb,

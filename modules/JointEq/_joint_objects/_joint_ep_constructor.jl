@@ -5,7 +5,6 @@ function ep_pool_sep_eq(ep_jf, ep_jks,
                         fi_sf_mu_b::Float64,
                         fi_rf_mu_b::Float64,
                         fi_rf_obj_val::Float64;
-                        # ep_ks_path::String;
                         equilibrium_type::String="all",
                         sf_obj_fun::Symbol=:firm_value,
                         rf_obj_fun::Symbol=:firm_value,
@@ -17,45 +16,24 @@ function ep_pool_sep_eq(ep_jf, ep_jks,
                         spline_k::Int64=3,
                         spline_bc::String="extrapolate")
 
+    if !(equilibrium_type in ["all", "pooling", "separating"])
+        println("Please set equilibrium_type to pooling or separting. Exiting...")
+        return
+    end
     
-    # if equilibrium_type == "pooling"
-    #     dfname =  pooldf_name
-    # elseif equilibrium_type == "separating"
-    #     dfname = sepdf_name
-    # else
-    #     println(string("Wrong equilibrium type. ",
-    #                    "Please enter either <pooling> or <separating>. ",
-    #                    "Exiting..."))
-    #     return
-    # end                
-        
-    jks = deepcopy(ep_jks)
-
-    # # Joint Optimal mu_b
-    # if .&(exists_ep_df(ep_ks_path, dfname), !rerun)
-    #     pmdf = CSV.read(string(ep_ks_path, "/", dfname, ".csv");
-    #                         types=mps_col_types)
-
-    #     # Slice DataFrame
-    #     ep_pm_eqdf = slice_mps_dataframe(pmdf, jks,
-    #                                      ep_jf; rerun=rerun)
-    # else
-        pmdf = find_joint_optimal_bond_measure(ep_jf, jks,
-                                               fi_sf_mu_b,
-                                               fi_rf_mu_b,
-                                               fi_rf_obj_val;
-                                               equilibrium_type=equilibrium_type,
-                                               sf_obj_fun=sf_obj_fun,
-                                               rf_obj_fun=rf_obj_fun,
-                                               lb=lb, ub=ub,
-                                               mu_bN=mu_bN, mu_bN2=mu_bN2,
-                                               spline_k=spline_k,
-                                               spline_bc=spline_bc)
-
-        # Reshape
-        #ep_pm_eqdf = reshape_sf_rf_df(pmdf)
- #   end
-    return pmdf #ep_pm_eqdf
+    pmdf = find_joint_optimal_bond_measure(ep_jf, deepcopy(ep_jks),
+                                           fi_sf_mu_b,
+                                           fi_rf_mu_b,
+                                           fi_rf_obj_val;
+                                           equilibrium_type=equilibrium_type,
+                                           sf_obj_fun=sf_obj_fun,
+                                           rf_obj_fun=rf_obj_fun,
+                                           lb=lb, ub=ub,
+                                           mu_bN=mu_bN, mu_bN2=mu_bN2,
+                                           spline_k=spline_k,
+                                           spline_bc=spline_bc)
+    
+    return pmdf 
 end
 
 
@@ -124,20 +102,14 @@ function ep_constructor(jep, sf_bt, rf_bt;
     # #################################################################
 
 
-    # Path to Results Directory
-    #jks_fpath = make_jeq_jks_fpath(ep_jf)
-    #fi_fname = get_jeq_mus_fname(ep_jf; eq_type="full_info")
-    #fi_fpath_name = string(jks_fpath, "/", fi_fname)
-
-
     # Electronic Platform Full-Information Equilibrium ################
     if .&(isfile(fi_fpath_name), !rerun_full_info)
         fidf = CSV.read(fi_fpath_name)
                         #types=fidf_col_types)
         
         # Slice DataFrame
-        ep_sf_eqdf = DataFrame(fidf[1, :]) # fidf[fidf[:firm_type] .== "safe", :]
-        ep_rf_eqdf = DataFrame(fidf[2, :]) # fidf[fidf[:firm_type] .== "risky", :]
+        ep_sf_eqdf = DataFrame(fidf[1, :]) 
+        ep_rf_eqdf = DataFrame(fidf[2, :]) 
 
         # Capture Full Information Optimal mu_b and MBR ###################
         fi_sf_mu_b = ep_sf_eqdf[1, :mu_b]
@@ -173,22 +145,11 @@ function ep_constructor(jep, sf_bt, rf_bt;
     # Electronic Platform Misrepresentation ###########################
     # Do risky firms have an incentive to copy the capital structure
     # of the safe firms?
-    #ep_ks_path = get_ep_results_path(ep_jf; ep_dir=ep_dir)
-    # misrep_fname = get_jeq_mus_fname(ep_jf; eq_type="misrep")
-    # misrep_fpath_name = string(jks_fpath, "/", misrep_fname)
-    
-    misrep_jks = deepcopy(ep_jks)
-    setfield!(misrep_jks, :mu_s, 1.)
-    setfield!(misrep_jks, :mu_b, fi_sf_mu_b)
-    # if .&(exists_ep_df(ep_ks_path, misrepdf_name), !rerun_misrep)
-    # if .&(isfile(misrep_fpath_name), !rerun_misrep)
-    #     misrepdf = CSV.read(string(jks_fpath, "/", misrep_fname))#;
-    #                       #  types=mps_col_types)
-
-    #     # Slice DataFrame
-    #     ep_misrep_eqdf = slice_mps_dataframe(misrepdf, misrep_jks,
-    #                                          ep_jf; rerun=rerun_misrep)
     if run_misrep
+        misrep_jks = deepcopy(ep_jks)
+        setfield!(misrep_jks, :mu_s, 1.)
+        setfield!(misrep_jks, :mu_b, fi_sf_mu_b)
+        
         ep_misrep_eqdf = find_joint_optimal_vb(ep_jf, misrep_jks;
                                                mu_b=fi_sf_mu_b,
                                                rerun_fi_vb=true)
@@ -205,6 +166,8 @@ function ep_constructor(jep, sf_bt, rf_bt;
     end
     # ##################################################################
 
+
+    # Electronic Platform Pooling and Separating Equilibria ############
     eq_type = "all"
     run_pool_sep_eq = true
     if .&(run_pool_eq, !run_sep_eq)
@@ -214,16 +177,14 @@ function ep_constructor(jep, sf_bt, rf_bt;
     elseif .&(!run_pool_eq, !run_sep_eq)
         run_pool_sep_eq = false
     end
+
     ep_pool_eqdf = DataFrame()
     ep_sep_eqdf = DataFrame()
-    # Electronic Platform Pooling and Separating Equilibria ############
-    ep_eqdf = DataFrame()
     if run_pool_sep_eq
         ep_eqdf = ep_pool_sep_eq(ep_jf, deepcopy(ep_jks),
                                  fi_sf_mu_b,
                                  fi_rf_mu_b,
                                  fi_rf_obj_val;
-                                 # ep_ks_path;
                                  equilibrium_type=eq_type,
                                  sf_obj_fun=sf_obj_fun,
                                  rf_obj_fun=rf_obj_fun,
@@ -248,70 +209,3 @@ function ep_constructor(jep, sf_bt, rf_bt;
                    ep_misrep_eqdf, ep_pool_eqdf, ep_sep_eqdf)
 end
 
-
-
-
-
-
-# TRASH ##############################################################
-    # if .&(exists_ep_df(ep_ks_path, fidf_name), !rerun_full_info)
-        
-        # fidf = CSV.read(string(ep_ks_path, "/", fidf_name, ".csv");
-        #                 types=fidf_col_types)
-
-
-        # ep_sf_eqdf = slice_full_info_dataframe(fidf, ep_jks,
-        #                                        ep_sf_svm;
-        #                                        rerun=rerun_full_info)
-        # ep_rf_eqdf = slice_full_info_dataframe(fidf, ep_jks,
-        #                                        ep_rf_svm;
-        #                                        rerun=rerun_full_info)
-
-    # # Electronic Platform Separating Equilibrium ######################
-    # # Separting Optimal mu_b
-    # if run_sep_eq
-    #     ep_sep_eqdf = ep_pool_sep_eq(ep_jf, deepcopy(ep_jks),
-    #                                  fi_sf_mu_b,
-    #                                  fi_rf_mu_b,
-    #                                  fi_rf_obj_val,
-    #                                  ep_ks_path;
-    #                                  equilibrium_type="separating",
-    #                                  sf_obj_fun=sf_obj_fun,
-    #                                  rf_obj_fun=rf_obj_fun,
-    #                                  rerun=rerun_misrep,
-    #                                  lb=lb, ub=ub,
-    #                                  mu_bN=mu_bN, mu_bN2=mu_bN2,
-    #                                  spline_k=spline_k,
-    #                                  spline_bc=spline_bc)
-    # else
-    #     ep_sep_eqdf = DataFrame()
-    # end
-
-    # sep_jks = deepcopy(ep_jks)
-    # if .&(exists_ep_df(ep_ks_path, sepdf_name), !rerun_sep)
-    #     sepdf = CSV.read(string(ep_ks_path, "/", sepdf_name, ".csv");
-    #                      types=mps_col_types)
-
-    #     # Slice DataFrame
-    #     ep_sep_eqdf = slice_mps_dataframe(sepdf, sep_jks,
-    #                                       ep_jf; rerun=rerun_pool)
-    # else
-    #     sepdf = find_joint_optimal_bond_measure(ep_jf, sep_jks,
-    #                                             fi_sf_mu_b,
-    #                                             fi_rf_mu_b,
-    #                                             fi_rf_obj_val;
-    #                                             equilibrium_type="separating",
-    #                                             sf_obj_fun=sf_obj_fun,
-    #                                             rf_obj_fun=rf_obj_fun,
-    #                                             lb=lb, ub=ub,
-    #                                             mu_bN=mu_bN, mu_bN2=mu_bN2,
-    #                                             spline_k=spline_k,
-    #                                             spline_bc=spline_bc)
-        
-    #     # Reshape
-    #     ep_sep_eqdf = reshape_sf_rf_df(sepdf)
-    # end
-    # #################################################################
-
-
-# ####################################################################

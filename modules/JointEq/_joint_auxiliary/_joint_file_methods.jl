@@ -16,6 +16,18 @@ function get_jeq_mus_fname(jks_fpath::String; eq_type::String="pooling", mu_s::F
 end
 
 
+function get_jeq_contour_fname(jks_fpath::String, comb_num::Int64; eq_type::String="full_info")
+    if !(eq_type in keys(eq_type_dict))
+        println("Unrecognized equilibrium type.")
+        println("Please enter 'full_info', 'misrep', 'pooling' or 'separating'.")
+        println("Exiting...")
+        return
+    end
+
+    return string(jks_fpath, "/", eq_type_dict[eq_type][:fn_prefix], "_", comb_num, ".csv")
+end
+
+
 function collect_joint_eq_files(jks_fpath::String; eq_type::String="full_info")
     if !(eq_type in keys(eq_type_dict))
         println("Unrecognized equilibrium type.")
