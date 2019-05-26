@@ -88,7 +88,8 @@ function find_optimal_bond_measure(svm;
                                    vbN::Int64=15,
                                    vbN2::Int64=10^5,
                                    spline_k::Int64=3,
-                                   spline_bc::String="extrapolate")
+                                   spline_bc::String="extrapolate",
+                                   tol::Float64=2.5 * 1e-3)
 
     # Set Capital Structure #########################
     if !isnan(m)
@@ -149,11 +150,39 @@ function find_optimal_bond_measure(svm;
     setfield!(jks, :mu_b, opt_mu_b)
 
     # Get Optimal VB
-    # setfield!(jks, :vbl, funs[:vb](opt_mu_b))
     opt_vbl = bond_measure_full_info_vb(svm, jks, jks.mu_b)
     setfield!(jks, :vbl, opt_vbl)
     
-    return eq_fd(svm; vbl=jks.vbl,
+    eqdf = eq_fd(svm; vbl=jks.vbl,
                  mu_b=jks.mu_b,
                  m=jks.m, c=jks.c, p=jks.p)
+
+    
+    # Filter to eliminate mu_b candidates for which there is not optimal vbl
+    count = 1
+    while .&(abs.(eqdf[1, :eq_deriv_min_val]) > tol, count<=10)
+        funs[:eq_deriv_min_val] = Dierckx.Spline1D(df[:mu_b], abs.(df[:eq_deriv_min_val]);
+                                                   k=spline_k, bc=spline_bc)
+        # Filter mu_b grid
+        filtered_mu_b_grid = mu_b_grid_ref[funs[:eq_deriv_min_val](mu_b_grid_ref) .< tol]
+        
+        # Get optimal mu_b
+        opt_mu_b = filtered_mu_b_grid[argmax(funs[:firm_value](filtered_mu_b_grid))]
+        
+        # Set optimal mu_b
+        setfield!(jks, :mu_b, opt_mu_b)
+        
+        # Get Optimal VB
+        opt_vbl = bond_measure_full_info_vb(svm, jks, jks.mu_b)
+        setfield!(jks, :vbl, opt_vbl)
+        
+        eqdf = eq_fd(svm; vbl=jks.vbl,
+                     mu_b=jks.mu_b,
+                     m=jks.m, c=jks.c, p=jks.p)
+
+        df = sort!(vcat(df, eqdf), :mu_b)
+        count += 1
+    end
+
+    return eqdf
 end

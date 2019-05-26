@@ -191,7 +191,7 @@ if !isfile(pool_fpath_name)
     run_pool = true
 end
 
-if .&(!isfile(sep_fpath_name))
+if !isfile(sep_fpath_name)
     run_sep = true
 end
 

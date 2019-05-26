@@ -16,7 +16,8 @@ using Dates
 main_path = "/home/artur/BondPricing"
 module_path = string(main_path, "/", "Julia/modules/")
 modls = ["Batch", "ModelObj", "AnalyticFunctions", 
-         "BondPrInterp", "EqFinDiff", "ModelPlots", "JointEq"]
+         "BondPrInterp", "EqFinDiff", "ModelPlots",
+         "FullInfoEq", "JointEq"]
 for modl in modls
     include(string(joinpath(module_path, modl), "/", modl, ".jl"))
 end
