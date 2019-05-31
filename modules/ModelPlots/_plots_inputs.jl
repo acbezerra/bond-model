@@ -35,7 +35,6 @@ vartitles = Dict{Symbol, String}(:vb => "\$V^B\$",
 
 # ########################################################################
 # CVM Plots ##############################################################
-
 cvm_plots_title_params_order = [:mu_b, :m, :iota, :xi, :kappa, :sigmal]
 # ########################################################################
 
@@ -67,7 +66,6 @@ svm_plots_title_params_order = [:mu_b, :m, :iota, :xi, :kappa, :lambda, :sigmal,
 
 # ########################################################################
 # CVM v.s. SVM & Misrepresentation Plots #################################
-
 fixed_vars = [:mu_b, :m, :xi, :sigmal]
 cvs_xvars = [:kappa, :lambda, :sigmah]
 
@@ -193,3 +191,59 @@ fi_curve_color = "blue"
 
 jeq_plots_title_params_order =  [:m, :xi, :sigmal]
 otc_region_color = "#F0B27A"
+# ########################################################################
+
+
+# ########################################################################
+# Contour Plots ##########################################################
+resdict = Dict{Symbol,Any}(:xvar => :Symbol,
+                           :yvar => :Symbol,
+                           :zvar => :Symbol,
+                           :x_fun => Spline1D,
+                           :y_fun => Spline1D,
+                           :xy_fun => Spline1D,
+                           :df => DataFrame())
+
+
+contour_tlabels = Dict{Symbol, Array{String,1}}(:lambda => ["\\lambda", "%.3f"],
+                                                :m => ["m", "%.2f"],
+                                                :kappa => ["\\kappa \\, (b.p.)", "%.2f"],
+                                                :xi => ["\\xi", "%.2f"],
+                                                :sigmal => ["\\sigma_l", "%.3f"],
+                                                :c => ["Coupon", "%.2f"],
+                                                :p => ["Principal", "%.2f"],
+                                                :vb => ["VB", "%.1f"],
+                                                :debt => ["Debt", "%.1f"],
+                                                :equity => ["Equity", "%.1f"],
+                                                :firm_value => ["Firm Value", "%1d"],
+                                                :leverage => ["Leverage", "%1d"],
+                                                :MBR => ["Market-to-Book Ratio", "%1d"])
+
+
+contour_plots_title_params_order = [:m, :xi, :kappa, :lambda, :sigmal]
+
+
+eq_type_title = Dict{String, String}("full_info" => "Full Information",
+                                     "misrep" => "Misrepresentation",
+                                     "pooling" => "Pooling",
+                                     "separating" => "Separating")
+
+
+iso_cmaps = Dict{String, Any}("full_info" => Seaborn.get_cmap("YlGnBu_r"),
+                              "misrep" => Seaborn.palplot("Reds"),
+                              "pooling" => "BuPu")
+
+iso_plt_inputs = Dict{Symbol,Any}(:seaborn_style => "white", 
+                                  :iso_levels => 20, 
+                                  :heat_levels => 25, 
+                                  :fig_aspect => .4, 
+                                  :iso_fontsize => 9.,
+                                  :use_subgrid => true,
+                                  :subgrid_rows => 3, 
+                                  :iso_cols => 6, 
+                                  :heat_cols => 4,
+                                  :title_font_size => 14.5,
+                                  :tight_pad => 3., 
+                                  :h_pad => .75,
+                                  :w_pad => .75)
+# ########################################################################

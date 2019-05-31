@@ -41,6 +41,27 @@ function collect_joint_eq_files(jks_fpath::String; eq_type::String="full_info")
 end
 
 
+function process_results(jks_fpath::String, eq_type::String)
+    if !(eq_type in keys(eq_type_dict))
+        println("Please set equilibrium_type to 'full_info', 'misrep', 'pooling' or 'separating'. Exiting...")
+        return
+    end
+    
+    df_l = [CSV.read(string(jks_fpath, "/", x)) for x in readdir(jks_fpath) 
+            if occursin(string(eq_type_dict[eq_type][:fn_prefix], "_"), x)]
+    df = vcat(df_l...)
+    if eq_type == "full_info"
+        df = df[nonunique(df[[:iota, :sigmah]]) .== false, :]
+        df = vcat(sort(df[isnan.(df[:sigmah]), :], [:iota]),
+                  sort(df[df[:iota] .== .0, :], [:sigmah]))   
+    else
+        df = vcat(sort(df[isnan.(df[:r_sigmah]), :], [:r_iota]),
+                  sort(df[df[:r_iota] .== .0, :], [:r_sigmah]))
+    end            
+end
+
+
+
 # ###########################################################################
 # TRASH #####################################################################
 # ###########################################################################

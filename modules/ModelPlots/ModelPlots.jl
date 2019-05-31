@@ -113,4 +113,9 @@ include("_JEQ/_jeq_curves.jl")
 include("_JEQ/_jeq_color_regions.jl")
 include("_JEQ/_jeq_plot_methods.jl")
 
+# Contour Plots 
+include("_Contour/_contour_auxiliary.jl")
+include("_Contour/_contour_plot_methods.jl")
+include("_Contour/_contour_payoff_functions.jl")
+
 end
