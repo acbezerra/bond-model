@@ -51,7 +51,7 @@ for rf_comb_num in svmdf[:comb_num] #svm_combs
                                  sf_obj_fun=firm_obj_fun,
                                  rf_obj_fun=firm_obj_fun,
                                  rerun_full_info=false,
-                                 rerun_misrep=true,
+                                 run_misrep=true,
                                  rerun_pool=false,
                                  rerun_sep=false)
     

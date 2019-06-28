@@ -40,7 +40,6 @@ svmdict[:iota] = [0.]
 svmdict[:kappa] = [10., 25.] .* 1e-4
 svmdict[:lambda] = [.1]
 
-
 # cvm_combs = Batch.get_batch_comb_numbers(cbt, cvmdict)[:comb_num]
 # svm_combs = Batch.get_batch_comb_numbers(sbt, svmdict)[:comb_num]
 

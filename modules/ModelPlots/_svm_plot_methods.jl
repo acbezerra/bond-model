@@ -344,7 +344,7 @@ function svm_heat_surf_plot_path_fname(pt, xy_list::Array{Symbol,1}, z_var::Symb
                                           fixed_params[:sigmah])
     else
         graph_type = "lambda_sigmah"
-        graph_sub_folder = str_format_fun(string("kappa_(bp)_", pt.xylabels[:kappa][2]),
+        graph_sub_folder = str_format_fun(string("kappa_bp_", pt.xylabels[:kappa][2]),
                                           fixed_params[:kappa] * 10^4)
     end
     
@@ -395,7 +395,7 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
                                cbaxes::Array{Float64,1}=[.975, 0.15, 0.015, 0.675],
                                return_fig::Bool=true,
                                fig_dpi::Int64=400,
-                               graph_format::String="eps")
+                               graph_format::String=heat_surf_graph_format)
 # sup_title_x::Float64=.575,
     
     # ###################################################

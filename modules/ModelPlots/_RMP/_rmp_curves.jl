@@ -170,7 +170,8 @@ function plot_vlines(ax, xvar;
                      fv_color::String=fv_color,
                      mbr_xvar::Float64=NaN,
                      mbr_color::String=mbr_color,
-                     misrep_xvar::Float64=NaN,
+                     cvm_misrep_xvar::Float64=NaN,
+                     svm_misrep_xvar::Float64=NaN,
                      misrep_color::String=misrep_color)
 
     # Form Dictionary with labels and values:
@@ -178,7 +179,8 @@ function plot_vlines(ax, xvar;
                                 fv_color=fv_color,
                                 mbr_xvar=mbr_xvar,
                                 mbr_color=mbr_color,
-                                misrep_xvar=misrep_xvar,
+                                cvm_misrep_xvar=cvm_misrep_xvar,
+                                svm_misrep_xvar=svm_misrep_xvar,
                                 misrep_color=misrep_color)
 
     xkeys = [x for x in keys(vldict) if .&(!isnan(vldict[x][:value]), !isinf(vldict[x][:value]))] 

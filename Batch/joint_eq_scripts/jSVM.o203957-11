@@ -1,0 +1,32 @@
+
+#################
+Epilogue Job Info:
+Job ID: 203957[11].acropolis
+User ID: artur
+Job Name: jSVM-11
+Resource List: nodes=1:ppn=25,mem=60gb,neednodes=1:ppn=25,walltime=2400:00:00
+Resources Used: cput=00:00:00,vmem=1665392kb,walltime=00:04:50,mem=4848kb,energy_used=0
+Exit Code: -3
+#################
+
+/home/artur/BondPricing/Julia/Batch/joint_eq_scripts
+/home/artur/BondPricing/Julia/log_files/JEQ/203957[11].acropolis
+/var/spool/torque/aux//203957[11].acropolis
+11
+i. Number of processors/cores: 25
+ii. Combination Number: 11
+iii. Rerun Full Information Results: 0
+iv. Rerun Misrepresentation Results:
+v. Run Pooling Equilibrium: 0
+vi. Run Separating Equilibrium: 1
+
+#################
+Epilogue Job Info:
+Job ID: 203957[11].acropolis
+User ID: artur
+Job Name: jSVM-11
+Resource List: nodes=1:ppn=25,mem=60gb,neednodes=1:ppn=25,walltime=2400:00:00
+Resources Used: cput=00:59:06,vmem=2609060kb,walltime=00:14:58,mem=1264064kb,energy_used=0
+Exit Code: 0
+#################
+

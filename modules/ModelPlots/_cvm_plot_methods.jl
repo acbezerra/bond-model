@@ -1,6 +1,4 @@
 
-
-
 function cvm_data_handler(pt)
     kappa_vals = unique(pt.cvm_data[:kappa])
     sigmal_vals = unique(pt.cvm_data[:sigmal])

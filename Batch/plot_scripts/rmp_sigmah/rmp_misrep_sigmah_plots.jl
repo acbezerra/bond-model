@@ -1,3 +1,4 @@
+main_path = "/home/artur/BondPricing"
 plot_script_path = string(main_path, "/Julia/Batch/plot_scripts")
 plots_xvar_dir = "rmp_sigmah"
 plot_script_name = "rmp_sigmah_preamble.jl"
@@ -15,7 +16,7 @@ if rerun_misrep | !(misrepdf_fn in readdir(script_dir))
     # Form Misrepresentation DF 
     misrepdf = include(string(script_dir, "/", plot_script_name))
 else
-    misrepdf = CSV.read(string(script_dir, "/", misrepdf_fn), types=JointEq.mps_col_types)
+    misrepdf = CSV.read(string(script_dir, "/", misrepdf_fn)) #, types=JointEq.mps_col_types)
 end
 # #########################################################
 
@@ -46,11 +47,12 @@ mbr_sigmah = ModelPlots.get_cutoff_value(svmdf, :sigmah,
                                          xgrid=xgrid)
 
 # sigmah : FI MBR = Misrep MBR
-misrep_sigmah = ModelPlots.get_misrep_cutoff_value(:sigmah, :MBR, 
-                                                   deepcopy(cvmdf),
-                                                   deepcopy(svmdf),
-                                                   deepcopy(misrepdf),
-                                                   xgrid=xgrid)
+cvm_misrep_sigmah, svm_misrep_sigmah = ModelPlots.get_misrep_cutoff_value(:sigmah, :MBR, 
+                                                                          deepcopy(cvmdf),
+                                                                          deepcopy(svmdf),
+                                                                          deepcopy(misrepdf),
+                                                                          xgrid=xgrid)
+cvm_misrep_sigmah=fv_sigmah
 # #########################################################
 
 # return cvmdf, svmdf, misrepdf, fv_sigmah, mbr_sigmah, misrep_sigmah
@@ -62,7 +64,8 @@ fv_fig = ModelPlots.rmp_fi_plotfun(:sigmah, [:firm_value],
                                    misrepdf=deepcopy(misrepdf),
                                    fv_xvar=fv_sigmah,
                                    mbr_xvar=mbr_sigmah,
-                                   misrep_xvar=misrep_sigmah,
+                                   cvm_misrep_xvar=cvm_misrep_sigmah,
+                                   svm_misrep_xvar=svm_misrep_sigmah,
                                    color_rm_region=false,
                                    color_nrm_region=false,
                                    color_conflict_region=false,
@@ -77,7 +80,8 @@ mbr_fig = ModelPlots.rmp_fi_plotfun(:sigmah, [:MBR],
                                     misrepdf=deepcopy(misrepdf),
                                     fv_xvar=fv_sigmah,
                                     mbr_xvar=mbr_sigmah,
-                                    misrep_xvar=misrep_sigmah,
+                                    cvm_misrep_xvar=cvm_misrep_sigmah,
+                                    svm_misrep_xvar=svm_misrep_sigmah,
                                     color_rm_region=false,
                                     color_nrm_region=false,
                                     color_conflict_region=false,
@@ -91,7 +95,8 @@ fv_mbr_fig = ModelPlots.rmp_fi_plotfun(:sigmah, [:firm_value, :MBR],
                                        misrepdf=deepcopy(misrepdf),
                                        fv_xvar=fv_sigmah,
                                        mbr_xvar=mbr_sigmah,
-                                       misrep_xvar=misrep_sigmah,
+                                       cvm_misrep_xvar=cvm_misrep_sigmah,
+                                       svm_misrep_xvar=svm_misrep_sigmah,
                                        color_rm_region=false,
                                        color_nrm_region=false,
                                        color_conflict_region=false,

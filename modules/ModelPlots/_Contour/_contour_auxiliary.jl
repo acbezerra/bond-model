@@ -24,23 +24,35 @@ function slice_df(df::DataFrame, svar::Symbol; tol::Float64=1e-5)
 end
 
 
-function interp_z_values(df::DataFrame, xvar::Symbol, 
-                         yvar::Symbol, zvars::Array{Symbol, 1};
+function interp_z_values(df::DataFrame;
+                         xvar::Symbol=contour_xvar,
+                         yvar::Symbol=contour_yvar,
+                         zvars::Array{Symbol, 1}=contour_zvars,
                          ft_xy::Symbol=Symbol(""),
+                         ft_z::Array{Symbol, 1}=[:s_, :r_],
                          spline_k::Int64=3, 
                          spline_bc::String="extrapolate")
+    if !(xvar in names(df))
+        ft_xy = :r_
+    end
+    
     # Separate DataFrames
     xdf = slice_df(df, Symbol(ft_xy, xvar))
     ydf = slice_df(df, Symbol(ft_xy, yvar))
 
     # Form Dictionary to store results
-    tmpdict = Dict(zip([xvar, yvar], 
-                       [Spline1D(1:5, 1:5), Spline1D(1:5, 1:5)]))
+    tmpdict = Dict{Symbol, Any}(zip([xvar, yvar], 
+                                    [Spline1D(1:5, 1:5), Spline1D(1:5, 1:5)]))
     # fd = Dict(zip(zvars, repeat([deepcopy(tmpdict)], 1, size(zvars, 1))))
 
-    fd = Dict()
-    fd[:xvals] = xdf[Symbol(ft_xy, xvar)]
-    fd[:yvals] = ydf[Symbol(ft_xy, yvar)]
+    fd = Dict{Symbol, Any}(:xvar => xvar,
+                           :yvar => yvar,
+                           :xvals => xdf[Symbol(ft_xy, xvar)],
+                           :yvals => ydf[Symbol(ft_xy, yvar)])
+
+    if !(zvars[1] in names(df))
+        zvars = vcat([Symbol(prefix_z, zvar) for prefix_z in ft_z, zvar in zvars]...)
+    end
     
     # Interpolate Functions
     for zvar in zvars
@@ -69,6 +81,88 @@ function form_mesh_grid(xvals::Array{Float64,1},
 end
 
 
+function get_contour_plot_path_name(df::DataFrame, zfun_name::Symbol;
+                                    firm_type::Symbol=Symbol(""), fname_eq_type::String="",
+                                    fname_ext::String=contour_fname_ext)
+    eq_type = ""
+    if isempty(fname_eq_type)
+        eq_type = df[1, :eq_type]
+        fname_eq_type = eq_type_title[eq_type][1]
+    end
+    
+    if .&(eq_type != "full_info", any([isempty(string(firm_type)),
+                                      !(firm_type in [:safe, :risky])]))
+        println("Please enter a firm type: :safe or :risky. Exiting...")
+        return
+    end
+
+
+    mu_s = NaN
+    if eq_type == "full_info"
+        ft = ""
+        iota_s = minimum([x for x in df[:iota] if x > 0.])    
+        lambda_r = unique([x for x in df[:lambda] if !isnan(x)])[1]
+    else
+        ft = (firm_type == :safe) ? :s_ : :r_
+        mu_s = df[1, :mu_s]
+        iota_s = df[1, :s_iota]
+        lambda_r = unique([x for x in df[:r_lambda] if !isnan(x)])[1]
+    end
+
+    # Inverse Coupon Rate
+    pcr = df[1, :p]/df[1, :c]
+    
+    fname = string(fname_eq_type, "_mu_s_", mu_s, "_pcr_", pcr, 
+                   "_iota_s_", iota_s, "__lambda_r_", lambda_r,
+                   "__", ft,  zfun_name)
+    return string(contour_plots_path, "/", fname, ".", fname_ext)
+end
+
+
+function get_region_grids(xgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}},
+                          ygrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}},
+                          eqfun; N::Int64=10^5)
+    ymin = minimum(ygrid)
+    ymax = maximum(ygrid)
+    
+    yvals = x -> [y for y in ygrid if eqfun(x, y)]
+    min_y = x -> !isempty(yvals(x)) ? minimum(yvals(x)) : .0
+    max_y = x -> !isempty(yvals(x)) ? maximum(yvals(x)) : .0
+    
+    min_y_grid = fetch(@spawn [minimum([maximum([ymin, min_y(x)]), ymax]) for x in xgrid])
+    max_y_grid = fetch(@spawn [minimum([maximum([ymin, max_y(x)]), ymax]) for x in xgrid])
+    min_y_fun = Dierckx.Spline1D(xgrid, min_y_grid; k=3, bc="extrapolate")
+    max_y_fun = Dierckx.Spline1D(xgrid, max_y_grid; k=3, bc="extrapolate")
+
+    ref_xgrid = range(minimum(xgrid), stop=maximum(xgrid), length=N)
+    min_y_ref_grid = [minimum([maximum([ymin, min_y_fun(x)]), ymax]) for x in ref_xgrid]
+    max_y_ref_grid = [minimum([maximum([ymin, max_y_fun(x)]), ymax]) for x in ref_xgrid]
+    
+    # return min_y, max_y, ref_xgrid, min_y_ref_grid, max_y_ref_grid
+    return ref_xgrid, min_y_ref_grid, max_y_ref_grid
+end
+
+
+
+function get_eq_contour_mesh_grid(xvals::Array{Float64,1}, yvals::Array{Float64,1},
+                                  fun_dict; N::Int64=10^3)
+
+    # eq_bool = (x, y) -> fun_dict[:fi_ind](x, y) + 2 * fun_dict[:sep_ind](x, y) + 3 * fun_dict[:pool_ind](x, y)
+    # eq_vals = (x, y) -> (fun_dict[:fi_ind](x,y) * fun_dict[:mbr][:fi](x, y) +
+    #                      fun_dict[:sep_ind](x,y) * fun_dict[:mbr][:sep](x, y) +
+    #                      fun_dict[:pool_ind](x,y) * fun_dict[:mbr][:pool](x, y))
+    
+    X, Y, bool_Z = form_mesh_grid(xvals, yvals, fun_dict[:eq_bool], N=N)
+    _, _, bool_OTC_EP = form_mesh_grid(xvals, yvals, fun_dict[:bool_otc_ep], N=N)
+    _, _, r_MBR = fetch(@spawn form_mesh_grid(xvals, yvals, fun_dict[:r_mbr], N=N))
+    _, _, s_FV = fetch(@spawn form_mesh_grid(xvals, yvals, fun_dict[:s_fv], N=N))
+    
+    return Dict{Symbol, Any}(:X => X, :Y => Y,
+                             :bool_Z => bool_Z,
+                             :bool_OTC_EP => bool_OTC_EP,
+                             :r_MBR => r_MBR,
+                             :s_FV => s_FV)
+end
 
 
 # function find_xvar_yvar_values(df::DataFrame, xvar::Symbol, 

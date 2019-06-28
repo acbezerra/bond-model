@@ -1,3 +1,4 @@
+main_path = "/home/artur/BondPricing"
 plot_script_path = string(main_path, "/Julia/Batch/plot_scripts")
 plots_xvar_dir = "rmp_iota"
 plot_script_name = "rmp_iota_preamble.jl"
@@ -12,10 +13,19 @@ sf_comb_num = cvmdf[abs.(cvmdf[:iota] .- sf_iota) .< 1e-5, :comb_num][1]
 
 
 # Misrepresentation Payoffs ###############################
-plot_script_path = string(main_path, "/Julia/Batch/plot_scripts")
-plots_xvar_dir = "rmp_iota"
+rerun_misrep = false
+save_misrepdf = true
+script_dir = string(plot_script_path, "/", plots_xvar_dir)
+misrepdf_fn = "misrepdf.csv"
 plot_script_name = "rmp_misrep_iota_script.jl"
-misrepdf = include(string(plot_script_path, "/", plots_xvar_dir, "/", plot_script_name))
+
+if rerun_misrep | !(misrepdf_fn in readdir(script_dir))
+    # Form Misrepresentation DF 
+    misrepdf = include(string(script_dir, "/", plot_script_name))
+else
+    misrepdf = CSV.read(string(script_dir, "/", misrepdf_fn))#, types=JointEq.mps_col_types)
+end
+# misrepdf = include(string(plot_script_path, "/", plots_xvar_dir, "/", plot_script_name))
 # #########################################################
 
 
@@ -50,7 +60,7 @@ mbr_iota = ModelPlots.get_cutoff_value(sfdf, :iota,
                                        xgrid=xgrid)
 
 # iota : FI MBR = Misrep MBR
-misrep_iota = ModelPlots.get_cutoff_value(sfdf, :iota, :MBR, misrepdf[1, :r_MBR];
+cvm_misrep_iota = ModelPlots.get_cutoff_value(sfdf, :iota, :MBR, misrepdf[1, :r_MBR];
                                           xgrid=xgrid)
 # #########################################################
 
@@ -61,7 +71,8 @@ fv_fig = ModelPlots.rmp_fi_plotfun(:iota, [:firm_value],
                                    interp_yvar=true,
                                    misrepdf=deepcopy(misrepdf),
                                    fv_xvar=fv_iota,
-                                   misrep_xvar=misrep_iota,
+                                   cvm_misrep_xvar=cvm_misrep_iota,
+                                   svm_misrep_xvar=NaN,
                                    color_rm_region=false,
                                    color_nrm_region=false,
                                    color_conflict_region=false,
@@ -73,7 +84,8 @@ fv_fig = ModelPlots.rmp_fi_plotfun(:iota, [:MBR],
                                    interp_yvar=true,
                                    misrepdf=deepcopy(misrepdf),
                                    fv_xvar=fv_iota,
-                                   misrep_xvar=misrep_iota,
+                                   cvm_misrep_xvar=cvm_misrep_iota,
+                                   svm_misrep_xvar=NaN,
                                    color_rm_region=false,
                                    color_nrm_region=false,
                                    color_conflict_region=false,
@@ -85,7 +97,8 @@ fv_fig = ModelPlots.rmp_fi_plotfun(:iota, [:firm_value, :MBR],
                                    interp_yvar=true,
                                    misrepdf=deepcopy(misrepdf),
                                    fv_xvar=fv_iota,
-                                   misrep_xvar=misrep_iota,
+                                   cvm_misrep_xvar=cvm_misrep_iota,
+                                   svm_misrep_xvar=NaN,
                                    color_rm_region=false,
                                    color_nrm_region=false,
                                    color_conflict_region=false,

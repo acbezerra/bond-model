@@ -72,15 +72,26 @@ function color_conflict_region_fun(ax, xvar::Symbol, fv_xvar::Float64, mbr_xvar:
 end
 
 
-function color_misrep_region_fun(ax, misrep_xvar::Float64,
+function color_misrep_region_fun(ax,
+                                 cvm_misrep_xvar::Float64,
+                                 svm_misrep_xvar::Float64,
                                  xgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},
                                                      Base.TwicePrecision{Float64}},
                                  text_xloc::Float64, 
                                  text_yloc::Float64)
     trans = PyPlot.matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
-    ax.fill_between(xgrid, 0, 1, transform=trans,
+
+    if any([isnan(cvm_misrep_xvar), isnan(svm_misrep_xvar)])
+        misrep_xvar = isnan(cvm_misrep_xvar) ? svm_misrep_xvar : cvm_misrep_xvar
+        ax.fill_between(xgrid, 0, 1, transform=trans,
                     where=xgrid .>= misrep_xvar,
-                    facecolor=misrep_region_color, alpha=0.25)
+                        facecolor=misrep_region_color, alpha=0.25)
+    else
+        ax.fill_between(xgrid, 0, 1, transform=trans,
+                        where= .&(xgrid .>= minimum([cvm_misrep_xvar, svm_misrep_xvar]),
+                                  xgrid .<= maximum([cvm_misrep_xvar, svm_misrep_xvar])),
+                        facecolor=misrep_region_color, alpha=0.25)
+    end
     
     ax.text(text_xloc, text_yloc,
             "Misrepresentation is optimal",
@@ -101,7 +112,8 @@ function color_regions_fun(ax, xvar::Symbol,
                                                Base.TwicePrecision{Float64}};
                            fv_xvar::Float64=NaN,
                            mbr_xvar::Float64=NaN,
-                           misrep_xvar::Float64=NaN,
+                           cvm_misrep_xvar::Float64=NaN,
+                           svm_misrep_xvar::Float64=NaN,
                            color_rm_region::Bool=true,
                            color_nrm_region::Bool=true,
                            color_conflict_region::Bool=false,
@@ -163,10 +175,16 @@ function color_regions_fun(ax, xvar::Symbol,
 
     # Misrepresentation Region
     # Misrepresentation MBR > FI MBR
-    if .&(!isnan(misrep_xvar), color_misrep_region)
-        xloc = .5 * misrep_xvar + .5 * xmax
+    if .&(any([!isnan(cvm_misrep_xvar), !isnan(svm_misrep_xvar)]), color_misrep_region)
+        if any([isnan(cvm_misrep_xvar), isnan(svm_misrep_xvar)])
+            misrep_xvar = isnan(cvm_misrep_xvar) ? svm_misrep_xvar : cvm_misrep_xvar
+            xloc = .5 * misrep_xvar + .5 * xmax
+        else
+            xloc = .5 * ( cvm_misrep_xvar + svm_misrep_xvar)
+        end
+        
         yloc = .1 * ymin + .9 * ymax
-        ax = color_misrep_region_fun(ax, misrep_xvar, xgrid, xloc, yloc) 
+        ax = color_misrep_region_fun(ax, cvm_misrep_xvar, svm_misrep_xvar, xgrid, xloc, yloc) 
     end
 
     return ax

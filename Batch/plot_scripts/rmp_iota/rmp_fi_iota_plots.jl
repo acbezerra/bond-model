@@ -1,3 +1,4 @@
+main_path = "/home/artur/BondPricing"
 plot_script_path = string(main_path, "/Julia/Batch/plot_scripts")
 plots_xvar_dir = "rmp_iota"
 plot_script_name = "rmp_iota_preamble.jl"

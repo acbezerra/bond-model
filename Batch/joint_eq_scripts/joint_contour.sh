@@ -10,7 +10,7 @@
 #PBS -l nodes=1:ppn=25,mem=60g
 #PBS -j oe
 #PBS -V
-#PBS -t 11-11
+#PBS -t 10-11
 
 
 cd $PBS_O_WORKDIR
@@ -35,10 +35,10 @@ echo $PBS_ARRAYID
 # i. Number of Processors/Cores;
 # ii. Position in the Safe Firm Measure array 
 comb_num=$PBS_ARRAYID  # 1
-rerun_fi=1
+rerun_fi=0
 rerun_misrep=0
 run_pool=0
-run_sep=0
+run_sep=1
 
 echo i. Number of processors/cores: $PBS_NUM_PPN
 #echo ii. Memory: $job_mem
