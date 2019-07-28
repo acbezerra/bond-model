@@ -12,7 +12,7 @@ else
              "EqFinDiff", "FullInfoEq",
              "ModelPlots", "JointEq"]
     for modl in modls
-        include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+        include(string(joinpath(module_path, modl), ".jl"))
     end
 end    
 
@@ -32,7 +32,7 @@ println(" FI - Market-to-Book Ratio  ###########################################
 plot_title = ModelPlots.get_contour_plot_title(fidf, fi_funs, :MBR)
 file_path_name = ModelPlots.get_contour_plot_path_name(fidf, :mbr)
 fi_mbr_fig = ModelPlots.plot_iso_contour_curves(fi_fd, fi_funs[:mbr];
-                                                fig_title=plot_title
+                                                fig_title=plot_title,
                                                 file_path_name=file_path_name)
 println("###############################################################################")
 println(" ")
@@ -47,6 +47,7 @@ plot_title = ModelPlots.get_contour_plot_title(misrepdf, mp_funs, :MBR,
 file_path_name = ModelPlots.get_contour_plot_path_name(misrepdf, :mp_fi_mbr_diff;
                                                        firm_type=:risky)
 mp_fi_mbr_diff_fig = ModelPlots.plot_iso_contour_curves(mp_fd, mp_funs[:mp_fi_mbr_diff];
+                                                        rmp_diff_fun=mp_funs[:mp_fi_rm_diff],
                                                         fig_title=plot_title,
                                                         file_path_name=file_path_name,
                                                         iso_cmap=ModelPlots.iso_cmaps["misrep"])
@@ -62,9 +63,11 @@ plot_title = ModelPlots.get_contour_plot_title(pooldf, pool_funs, :MBR,
                                                ft=:risky)
 file_path_name = ModelPlots.get_contour_plot_path_name(pooldf, :mbr; firm_type=:risky)
 pool_r_mbr_fig = ModelPlots.plot_iso_contour_curves(pool_fd, pool_funs[:risky][:mbr];
+                                                    rmp_diff_fun=pool_funs[:risky][:jeq_fi_rm_diff],
                                                     fig_title=plot_title,
                                                     file_path_name=file_path_name,
-                                                    iso_cmap=ModelPlots.iso_cmaps["pooling"])
+                                                    iso_cmap=ModelPlots.iso_cmaps["pooling"],
+                                                    rmp_cmap="Greys", rmp_alpha=.3)
 println(" ")
 println(" Pool - Risky Type's MBR Differential #########################################")
 plot_title = ModelPlots.get_contour_plot_title(pooldf, pool_funs, :MBR;
@@ -72,14 +75,15 @@ plot_title = ModelPlots.get_contour_plot_title(pooldf, pool_funs, :MBR;
 file_path_name = ModelPlots.get_contour_plot_path_name(pooldf, :jeq_fi_mbr_diff;
                                                        firm_type=:risky)
 pool_fi_r_mbr_diff_fig = ModelPlots.plot_iso_contour_curves(pool_fd,
-                                                            pool_funs[:risky][:jeq_fi_mbr_diff];
+                                                           pool_funs[:risky][:jeq_fi_mbr_diff];                                                          rmp_diff_fun=pool_funs[:risky][:jeq_fi_rm_diff],
                                                             fig_title=plot_title,
                                                             file_path_name=file_path_name,
-                                                            iso_cmap=ModelPlots.iso_cmaps["pooling"])
+                                                            iso_cmap=ModelPlots.iso_cmaps["pooling"],
+                                                            rmp_cmap="Greys", rmp_alpha=.3)
 println(" ")
 println(" Pool - Safe Type's Firm Value  ################################################")
 plot_title = ModelPlots.get_contour_plot_title(pooldf, pool_funs, :firm_value;
-                                               ft=:safe)
+                                               ft=:safe, s_fi_fv=s_fi_fv)
 file_path_name = ModelPlots.get_contour_plot_path_name(pooldf, :fv;
                                                        firm_type=:safe)
 pool_s_fv_fig = ModelPlots.plot_iso_contour_curves(pool_fd, pool_funs[:safe][:fv];
@@ -115,7 +119,7 @@ sep_fi_r_mbr_diff_fig = ModelPlots.plot_iso_contour_curves(sep_fd,
 println(" ")
 println(" Sep - Safe Type's Firm Value  #################################################")
 plot_title = ModelPlots.get_contour_plot_title(sepdf, sep_funs, :firm_value;
-                                               ft=:safe)
+                                               ft=:safe, s_fi_fv=s_fi_fv)
 file_path_name = ModelPlots.get_contour_plot_path_name(sepdf, :fv; firm_type=:safe)
 sep_s_fv_fig = ModelPlots.plot_iso_contour_curves(sep_fd, sep_funs[:safe][:fv];
                                                   fig_title=plot_title,

@@ -1,10 +1,11 @@
 module_path = "/home/artur/BondPricing/Julia/modules/"
-modnames = ["Batch"]
-for modl in modnames
-    if !(joinpath(module_path, modl) in LOAD_PATH)
-        push!(LOAD_PATH, joinpath(module_path, modl))
-    end
-end
+push!(LOAD_PATH, module_path)
+# modnames = ["Batch"]
+# for modl in modnames
+#     if !(joinpath(module_path, modl) in LOAD_PATH)
+#         push!(LOAD_PATH, joinpath(module_path, modl))
+#     end
+# end
 
 
 module ModelPlots
@@ -59,7 +60,6 @@ function par_val_adj(x::Symbol, val::Float64)
     return !(x in [:iota, :kappa]) ? val : val * 1e4
 end
 # ########################################################################
-
 
 vartitles = Dict{Symbol, String}(:vb => "\$V^B\$",
                                  :c => "C",
@@ -306,6 +306,8 @@ iso_cmaps = Dict{String, Any}("full_info" => Seaborn.get_cmap("YlGnBu_r"),
                               "pooling" => "BuPu",
                               "separating" => "RdPu")
 
+rmp_cmaps = Dict{String, Any}("misrep" => "GnBu",
+                              "pooling" => "BuGn")
 
 iso_plt_inputs = Dict{Symbol,Any}(:seaborn_style => "white", 
                                   :iso_levels => 20, 
@@ -2974,9 +2976,8 @@ function get_contour_plot_path_name(df::DataFrame, zfun_name::Symbol;
 end
 
 
-function get_region_grids(xgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}},
-                          ygrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}},
-                          eqfun; N::Int64=10^5)
+function get_region_grids(xgrid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}},                          ygrid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}}, 
+               eqfun; N::Int64=10^5)
     ymin = minimum(ygrid)
     ymax = maximum(ygrid)
     
@@ -3074,7 +3075,8 @@ function get_contour_plot_title(df::DataFrame,
                                 ft::Symbol=Symbol(""),
                                 diff_fun::Bool=false,
                                 rm_prefix::Symbol=Symbol(""),
-                                params_list::Array{Symbol,1}=contour_plots_title_params_order)
+                                params_list::Array{Symbol,1}=contour_plots_title_params_order,
+                                s_fi_fv::Float64=NaN)
     
     eq_type = df[1, :eq_type]
 
@@ -3121,13 +3123,19 @@ function get_contour_plot_title(df::DataFrame,
                                      "\n for ", title_params)
         end   
     end
-    
+
+    if !isnan(s_fi_fv)
+        plot_title = latexstring(plot_title,
+                                 "\n (Safe Type's Full Information Firm Value = ",
+                                 str_format_fun("%.2f", s_fi_fv), ") \n")
+    end
     
     return plot_title
 end
 
 
 function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Float64,2};
+                         rmp_Z::Array{Float64, 2}=Array{Float64,2}(undef, 0, 2),
                          seaborn_style=iso_plt_inputs[:seaborn_style], 
                          iso_levels=iso_plt_inputs[:iso_levels],
                          heat_levels=iso_plt_inputs[:heat_levels],
@@ -3141,7 +3149,9 @@ function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Floa
                          heat_cols=iso_plt_inputs[:heat_cols],
                          cat_Z=[],
                          cat_cmap="GnBu",
-                         cat_alpha=.25)
+                         cat_alpha::Float64=.25,
+                         rmp_cmap=rmp_cmaps["misrep"],
+                         rmp_alpha::Float64=.15)
                          # cat_Z::Array{Int64, 2}=Array{Int64, 2}[])
     
     if isempty(heat_cmap)
@@ -3158,10 +3168,10 @@ function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Floa
     # Choose between subgrids or subplots ##################################
     if use_subgrid
         fig = PyPlot.figure(figsize=(w, h))
-        ax1 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols), (0, 0),
-                                  rowspan=subgrid_rows, colspan=iso_cols)
-        ax2 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols), (0, iso_cols),
-                                  rowspan=subgrid_rows, colspan=heat_cols)
+        ax1 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols),
+                                  (0, 0), rowspan=subgrid_rows, colspan=iso_cols)
+        ax2 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols),
+                                  (0, iso_cols), rowspan=subgrid_rows, colspan=heat_cols)
     else
         fig, axs = PyPlot.subplots(1, 2, figsize=(w, h), sharey=true)
         ax1 = axs[1] # fig.add_subplot(121)
@@ -3173,6 +3183,12 @@ function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Floa
     ax1.clabel(CS, inline=5, fontsize=iso_fontsize)
     ax1.set_ylabel(latexstring("\$", xylabels[:sigmah][1], "\$"), labelpad=10)
     ax1.set_xlabel(latexstring("\$", xylabels[:iota][1], "\$"), labelpad=10)
+
+    # Color Region where Firm's change their RMP relative to
+    # their Full Information Eq. RMP: 
+    if !isempty(rmp_Z)
+        CS3 = ax1.contourf(X, Y, rmp_Z, cmap=rmp_cmap, alpha=rmp_alpha)
+    end
 
     CS2 = ax2.contourf(X, Y, Z, levels=heat_levels, cmap=heat_cmap)
     if use_subgrid
@@ -3216,6 +3232,7 @@ end
 
 function plot_iso_contour_curves(fd::Dict{Symbol, Any},
                                  zfun;
+                                 rmp_diff_fun=nothing,
                                  fig_title::LaTeXString=LaTeXString(""),
                                  file_path_name::String="",
                                  seaborn_style=iso_plt_inputs[:seaborn_style], 
@@ -3233,11 +3250,19 @@ function plot_iso_contour_curves(fd::Dict{Symbol, Any},
                                  fig_dpi::Int64=iso_plt_inputs[:fig_dpi],
                                  tight_pad=iso_plt_inputs[:tight_pad],
                                  h_pad=iso_plt_inputs[:h_pad],
-                                 w_pad=iso_plt_inputs[:w_pad])
+                                 w_pad=iso_plt_inputs[:w_pad],
+                                 rmp_cmap=rmp_cmaps["misrep"],
+                                 rmp_alpha::Float64=.15)
     
     X, Y, Z = form_mesh_grid(fd[:xvals], fd[:yvals], zfun)
 
-    fig, ax1, ax2 = plot_iso_curves(X, Y, Z; 
+    rmp_Z = Array{Float64, 2}(undef, 0, 2)
+    if rmp_diff_fun != nothing
+        _, _, rmp_Z = ModelPlots.form_mesh_grid(fd[:xvals], fd[:yvals], rmp_diff_fun)
+    end
+    
+    fig, ax1, ax2 = plot_iso_curves(X, Y, Z;
+                                    rmp_Z=rmp_Z,
                                     seaborn_style=seaborn_style, 
                                     iso_levels=iso_levels,
                                     heat_levels=heat_levels, 
@@ -3248,7 +3273,9 @@ function plot_iso_contour_curves(fd::Dict{Symbol, Any},
                                     use_subgrid=use_subgrid,
                                     subgrid_rows=subgrid_rows,
                                     iso_cols=iso_cols,
-                                    heat_cols=heat_cols)
+                                    heat_cols=heat_cols,
+                                    rmp_cmap=rmp_cmap,
+                                    rmp_alpha=rmp_alpha)
     
     if !isempty(fig_title)
         fig.suptitle(fig_title, fontsize=title_font_size)
@@ -3376,13 +3403,18 @@ function misrep_payoff_functions(fi_funs::Dict{Symbol, Any}, mp_fd::Dict{Symbol,
     mp_funs = Dict{Symbol, Any}(:xvar => xvar, :yvar => yvar)
 
     # Compute Type-Specific MBR under Full Information ################
-    mp_funs[:rm_mbr], mp_funs[:nrm_mbr] = get_rm_payoff_funs(mp_fd, mp_fd[:xvar], mp_fd[:yvar], :MBR)
+    mp_funs[:rm_mbr], mp_funs[:nrm_mbr] = get_rm_payoff_funs(mp_fd, mp_fd[:xvar], mp_fd[:yvar], :r_MBR)
     mp_funs[:rm_cond] = (x, y) -> mp_funs[:rm_mbr](x, y) >= mp_funs[:nrm_mbr](x, y)
+
+    # Choose RMP that maximizes the MBR in case of Misrepresentation
     mp_funs[:mbr] = (x, y) -> maximum([mp_fd[:r_MBR][xvar](x), 
                                        mp_fd[:r_MBR][yvar](y)])
+
+    # Difference between Misrep MBR and FI MBR 
     mp_funs[:mp_fi_mbr_diff] = (x, y) -> mp_funs[:mbr](x, y) - fi_funs[:mbr](x, y)
-    
-    mp_funs[:mp_fi_rm_diff] = (x, y) -> mp_funs[:rm_cond](x, y) != fi_funs[:rm_cond](x, y)
+
+    # Does the Misrep RMP differ from the optimal RMP in Full Info Eq?   
+    mp_funs[:mp_fi_rm_diff] = (x, y) -> (mp_funs[:rm_cond](x, y) != fi_funs[:rm_cond](x, y)) ? 1. : 0.
     
     for zvar in [z for z in contour_zvars if z != :MBR]
         zsym = contour_zvars_sym[zvar]
@@ -3420,20 +3452,20 @@ function jeq_payoff_functions(fi_funs::Dict{Symbol, Any}, jfd::Dict;
     zsym = contour_zvars_sym[r_obj_fun]
 
     # Risky Firm's Objective Function Payoff in case of Risk-Management v.s. No Risk-Management
-    jeq_funs[:risky][Symbol(:rm_, zsym)], jeq_funs[:risky][Symbol(:nrm_, zsym)] = get_rm_payoff_funs(jfd, xvar, yvar,
-                                                                                                    Symbol(:r_, r_obj_fun))
+    jeq_funs[:risky][Symbol(:rm_, zsym)], jeq_funs[:risky][Symbol(:nrm_, zsym)] = get_rm_payoff_funs(jfd, xvar, yvar, Symbol(:r_, r_obj_fun))
 
     # Choose Risk-Management if it maximizes Payoff
     jeq_funs[:risky][:rm_cond] = (x, y) -> jeq_funs[:risky][Symbol(:rm_, zsym)](x, y) >= jeq_funs[:risky][Symbol(:nrm_, zsym)](x, y)
-    jeq_funs[:risky][:jeq_fi_rm_diff] = (x, y) -> jeq_funs[:risky][:rm_cond](x, y) != fi_funs[:rm_cond](x, y)
+
+    # Does this RMP differ from the optimal RMP in Full Info Eq? 
+    jeq_funs[:risky][:jeq_fi_rm_diff] = (x, y) -> (jeq_funs[:risky][:rm_cond](x, y) != fi_funs[:rm_cond](x, y)) ? 1. : 0.
 
     # Risky Firm's Objective Function Payoff
     jeq_funs[:risky][zsym] = (x, y) -> maximum([jfd[Symbol(:r_, r_obj_fun)][xvar](x), 
                                                 jfd[Symbol(:r_, r_obj_fun)][yvar](y)])
 
-    # Difference between Joint and Full Information Equilibrium
+    # Difference in RMP between Joint and Full Information Equilibrium
     jeq_funs[:risky][Symbol(:jeq_fi_, zsym, :_diff)] = (x, y) -> jeq_funs[:risky][zsym](x, y) - fi_funs[zsym](x, y)
-
     
     # Safe Firm's Payoff Depends on what Risky Firm chooses 
     jeq_funs[:safe][Symbol(:rm_, zsym)], jeq_funs[:safe][Symbol(:nrm_, zsym)] = get_rm_payoff_funs(jfd, xvar, yvar,
@@ -3488,6 +3520,7 @@ function get_contour_equilibria_funs(fi_funs, mp_funs, pool_funs, sep_funs,
     fun_dict[:s_fv] = (x, y) -> (fun_dict[:fi_ind](x,y) * fi_fv + #fi_funs[:fv](x, y) +
                                  fun_dict[:sep_ind](x,y) * sep_funs[:safe][:fv](x, y) +
                                  fun_dict[:pool_ind](x,y) * pool_funs[:safe][:fv](x, y))
+    fun_dict[:bool_otc] = (x, y) -> (fun_dict[:s_fv](x, y) < fi_fv_fun(k_otc)) ? 1 : 0
     fun_dict[:bool_otc_ep] = (x, y) -> (fun_dict[:s_fv](x, y) < fi_fv_fun(k_otc)) ? 1 : fun_dict[:eq_bool](x, y)
 
     catd = Dict(zip([eq_cat_dict[x][1] for x in keys(eq_cat_dict)], 

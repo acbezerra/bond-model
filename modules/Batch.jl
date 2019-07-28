@@ -361,15 +361,15 @@ function set_param_comb_df(bt)
     cols_dict = Dict([names(pcdf)[i] => Symbol(bt.bp._params_order[i]) 
                       for i in 1:size(names(pcdf), 1)])
     rename!(pcdf, cols_dict)
-    pcdf[:comb_num] = 1:size(pcdf, 1)
+    pcdf[!, :comb_num] = 1:size(pcdf, 1)
 
     # Important: sort by :m
     sort!(pcdf, :m)
     # Count rows by :m
-    pcdf[:m_comb_num] = by(pcdf, :m, m_comb_num = :m => x -> 1:size(x, 1))[:m_comb_num]
+    pcdf[!, :m_comb_num] = by(pcdf, :m, m_comb_num = :m => x -> 1:size(x, 1))[:, :m_comb_num]
 
     idcols = [:comb_num, :m, :m_comb_num]
-    bt.bp.df = pcdf[vcat(idcols, [x for x in names(pcdf) if !(x in idcols)])]
+    bt.bp.df = pcdf[:, vcat(idcols, [x for x in names(pcdf) if !(x in idcols)])]
 
     return bt
 end
@@ -436,8 +436,8 @@ function set_par_dict(bt; comb_num::Integer=0,
             println("Setting parameter dictionary using (m, m_comb_num) ID pair...")
         end
         # Slice Parameter Combinations DataFrame
-        cond = .&(abs.(bt.bp.df[:m] .- m) .< 1e-6, 
-                  abs.(bt.bp.df[:m_comb_num] .- m_comb_num) .< 1e-6)
+        cond = .&(abs.(bt.bp.df[:, :m] .- m) .< 1e-6, 
+                  abs.(bt.bp.df[:, :m_comb_num] .- m_comb_num) .< 1e-6)
         for par in bt.bp._params_order
             bt.mi._svm_dict[par] = bt.bp.df[cond, par][1]
         end
@@ -505,12 +505,12 @@ function get_batch_comb_num(bt; display_msgs::Bool=true,
     # Find row in the Parameter Combinations DataFrame
     svm_cols = [:lambda, :sigmah]
     cols = [x for x in names(bt.bp.df) if !(x in vcat([:comb_num, :m_comb_num], svm_cols))]
-    LL = [abs.(bt.bp.df[col] .- svm_dict[col]) .< 1e-5 for col in cols]
+    LL = [abs.(bt.bp.df[:, col] .- svm_dict[col]) .< 1e-5 for col in cols]
     for col in svm_cols
         if isnan(svm_dict[col])
-            LL = vcat(LL, [isnan.(bt.bp.df[col])])
+            LL = vcat(LL, [isnan.(bt.bp.df[:, col])])
         else
-            LL = vcat(LL, [abs.(bt.bp.df[col] .- svm_dict[col]) .< 1e-5])
+            LL = vcat(LL, [abs.(bt.bp.df[:, col] .- svm_dict[col]) .< 1e-5])
         end
     end
 
@@ -520,7 +520,7 @@ end
 
 function get_batch_comb_numbers(bt, pardict::Dict{Symbol,Array{Float64,1}};
                                 idcols::Array{Symbol,1}=[:comb_num, :m, :m_comb_num])
-    cond = .&([any.([(abs.(x .- pardict[var]).<1e-6) for x in bt.bp.df[var]]) 
+    cond = .&([any.([(abs.(x .- pardict[var]).<1e-6) for x in bt.bp.df[:, var]]) 
             for var in keys(pardict)]...)
 
     
@@ -1560,8 +1560,8 @@ end
 function interp_values(res, df, xvar::Symbol, interp_cols::Array{Symbol,1};
                        k::Int64=3, bc::String="extrapolate")
     for col in interp_cols
-        ffun = Dierckx.Spline1D(df[xvar], df[col]; k=k, bc=bc)
-        res[col] = ffun(res[xvar])
+        ffun = Dierckx.Spline1D(df[:, xvar], df[:, col]; k=k, bc=bc)
+        res[!, col] = ffun(res[:, xvar])
     end 
     return res
 end
@@ -2377,31 +2377,31 @@ function get_cvm_c_debt_at_par(bt, cvm, c::Float64;
     for var in varlist
         df[var] = bt.mi._svm_dict[var]
     end
-    df[:delta] = df[:gross_delta] - df[:iota]
+    df[!, :delta] = df[:, :gross_delta] - df[:, :iota]
 
-    df[:mu_b] = mu_b
-    df[:m] = m
-    df[:c] = c
-    df[:p] = pOpt
+    df[!, :mu_b] = mu_b
+    df[!, :m] = m
+    df[!, :c] = c
+    df[!, :p] = pOpt
     
     # Default Barrier
     vbl = get_cvm_vb(cvm, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
-    df[:vb] = vbl
+    df[!, :vb] = vbl
     
     # Debt
-    df[:debt] = get_cvm_debt_price(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)  
+    df[!, :debt] = get_cvm_debt_price(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)  
     df = debt_at_par_diffs(cvm, df, :p)
     
     # Equity
-    df[:eq_vb] = get_cvm_eq(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
-    df[:eq_min_val] = df[:eq_vb][1]
-    df[:equity] = get_cvm_eq(cvm, cvm.pm.V0, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
+    df[!, :eq_vb] = get_cvm_eq(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
+    df[!, :eq_min_val] = df[1, :eq_vb] #[1]
+    df[!, :equity] = get_cvm_eq(cvm, cvm.pm.V0, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
                 
     # Firm Value, Leverage & MBR
     df = non_interp_values(cvm, df)
 
     # Rearrange Columns
-    return df[bt.dfc.dfcols]
+    return df[:, bt.dfc.dfcols]
 end
 
 
@@ -2451,8 +2451,8 @@ function optimal_cvm_capital_struct(bt, cvm;
                           interp_vars=[:p, :vb, :debt, :equity])
 
     # Compute Optimal Capital Structure
-    sgF[:firm_value] = sgF[:debt] .+ sgF[:equity]
-    sgF[:MBR] = get_mbr(get_param(cvm, :V0), sgF[:debt], sgF[:equity])
+    sgF[!, :firm_value] = sgF[:debt] .+ sgF[:equity]
+    sgF[!, :MBR] = get_mbr(get_param(cvm, :V0), sgF[:debt], sgF[:equity])
     
     # Compute Optimal Capital Structure
     cpos = minimum(findlocalmaxima(sgF[firm_obj_fun]))
@@ -2466,57 +2466,57 @@ function optimal_cvm_capital_struct(bt, cvm;
     # #################################
     
     #  Capital Struct #################
-    optDF[:c] = sgF[:cgrid][cpos]
-    optDF[:p] = sgF[:p][cpos]
-    optDF[:vb] = sgF[:vb][cpos]
+    optDF[!, :c] = sgF[:cgrid][cpos]
+    optDF[!, :p] = sgF[:p][cpos]
+    optDF[!, :vb] = sgF[:vb][cpos]
     # #################################
     
     # Debt ###########################
-    optDF[:sg_debt] = sgF[:debt][cpos]
-    optDF[:debt] = get_cvm_debt_price(cvm, optDF[:vb][1], 
-                                     optDF[:sigmal][1]; 
-                                     mu_b=optDF[:mu_b][1], 
-                                     c=optDF[:c][1], 
-                                     p=optDF[:p][1])
+    optDF[!, :sg_debt] = sgF[:debt][cpos]
+    optDF[!, :debt] = get_cvm_debt_price(cvm, optDF[1, :vb], #[1], 
+                                     optDF[1, :sigmal]; #[1]; 
+                                     mu_b=optDF[1, :mu_b]. #[1], 
+                                     c=optDF[1, :c], # [1], 
+                                     p=optDF[1, :p]) # [1])
     optDF = debt_at_par_diffs(cvm, optDF, :p)
     # #################################
     
     # Equity #########################
-    optDF[:eq_vb] = get_cvm_eq(cvm, 
-                              optDF[:vb][1], 
-                              optDF[:sigmal][1]; 
-                              mu_b=optDF[:mu_b][1], 
-                              c=optDF[:c][1], 
-                              p=optDF[:p][1])
-    optDF[:eq_min_val] = optDF[:eq_vb][1]
-    optDF[:sg_equity] = sgF[:equity][cpos]
-    optDF[:equity] = get_cvm_eq(cvm, 
-                               optDF[:V0][1], 
-                               optDF[:sigmal][1]; 
-                               mu_b=optDF[:mu_b][1], 
-                               c=optDF[:c][1], 
-                               p=optDF[:p][1])
+    optDF[!, :eq_vb] = get_cvm_eq(cvm, 
+                                  optDF[1, :vb], #[1], 
+                                  optDF[1, :sigmal]; #[1]; 
+                                  mu_b=optDF[1, :mu_b], #[1], 
+                                  c=optDF[1, :c], #[1], 
+                                  p=optDF[1, :p]) #[1])
+    optDF[!, :eq_min_val] = optDF[1, :eq_vb][1]
+    optDF[!, :sg_equity] = sgF[:equity][cpos]
+    optDF[!, :equity] = get_cvm_eq(cvm, 
+                                   optDF[1, :V0], #[1], 
+                                   optDF[1, :sigmal]; #[1]; 
+                                   mu_b=optDF[1, :mu_b], #[1], 
+                                   c=optDF[1, :c], #[1], 
+                                   p=optDF[1, :p]) #[1])
     # #################################
     
     optDF = non_interp_values(cvm, optDF)
     
     
     # CVM NaN columns
-    optDF[:cvml_vb] = NaN
-    optDF[:cvmh_vb] = NaN
-    optDF[:eq_deriv] = NaN
-    optDF[:eq_min_val] = NaN
-    optDF[:eq_deriv_min_val] = NaN
+    optDF[!, :cvml_vb] = NaN
+    optDF[!, :cvmh_vb] = NaN
+    optDF[!, :eq_deriv] = NaN
+    optDF[!, :eq_min_val] = NaN
+    optDF[!, :eq_deriv_min_val] = NaN
 
-    optDF[:eq_negative] = false
+    optDF[!, :eq_negative] = false
      
     # Add Column with firm_obj_fun
-    optDF[:obj_fun] = String(firm_obj_fun)
+    optDF[!, :obj_fun] = String(firm_obj_fun)
 
     # Add combination IDs
     combdf = get_batch_comb_num(bt)
-    optDF[:comb_num] =combdf[1, :comb_num]
-    optDF[:m_comb_num] =combdf[1, :comb_num]       
+    optDF[!, :comb_num] =combdf[1, :comb_num]
+    optDF[!, :m_comb_num] =combdf[1, :comb_num]       
     id_cols = [:comb_num, :m, :m_comb_num]
     cols_order = vcat(id_cols, [x for x in opt_k_struct_cols(bt) if !(x in id_cols)])
     optDF = optDF[cols_order]
@@ -2585,9 +2585,9 @@ function compile_cvm_opt_results(; m::Float64=NaN,
     bt = get_bt(; model="cvm", comb_num=1, display_msgs=display_msgs)
 
     if !isnan(m)
-        comb_nums = bt.bp.df[abs.(bt.bp.df[:m] .- m) .< 1e-6, :comb_num]
+        comb_nums = bt.bp.df[abs.(bt.bp.df[:, :m] .- m) .< 1e-6, :comb_num]
     else
-        comb_nums = bt.bp.df[:comb_num]
+        comb_nums = bt.bp.df[:, :comb_num]
     end
 
     optDFs = @time fetch(@spawn [get_cvm_opt_results(; comb_num=comb,

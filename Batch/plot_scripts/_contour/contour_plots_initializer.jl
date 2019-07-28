@@ -19,7 +19,7 @@ modls = ["Batch", "ModelObj",
          "EqFinDiff", "FullInfoEq",
          "ModelPlots", "JointEq"]
 for modl in modls
-    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+    include(string(joinpath(module_path, modl), ".jl"))
 end
 
 
@@ -112,6 +112,22 @@ sep_funs = ModelPlots.jeq_payoff_functions(deepcopy(fi_funs), sep_fd; eq_type="s
 # #########################################################################
 # Equilibrium Type Indicators and Equilibrium-Specific Payoffs ############
 # #########################################################################
+fi_fv=fidf[1, :firm_value]
+println(string("s_fi_fv 1: ", fi_fv))
+println(string("s_fi_fv 2: ", fidf[abs.(fidf[:iota] .- s_iota * 1e4) .< 1e-5, :firm_value][1]))
+k_ep = 25.
+k_otc=32.5
+
+
+# Safe Type's Firm Value in the EP Full Information Equilibrium:
+s_fi_fv = fi_fv_fun(k_ep) # fidf[abs.(fidf[:iota] .- s_iota * 1e4) .< 1e-5, :firm_value][1]
+println(string("s_fi_fv 3: ", s_fi_fv))
+
+# Safe Type's Firm Value in the EP Full Information Equilibrium:
+s_otc_fv = fi_fv_fun(k_otc)
+println(string("s_otc_fv: ", s_otc_fv))
+
+
 fi_fv=fidf[1, :firm_value]
 k_otc=32.5
 fun_dict = ModelPlots.get_contour_equilibria_funs(fi_funs,

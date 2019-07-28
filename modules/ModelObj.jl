@@ -217,11 +217,11 @@ function set_opt_k_struct(mobj, df::DataFrame; m::Float64=NaN, tol::Float64=1e-6
     # Find Index
     LL = []
     for var in vars 
-        append!(LL, [abs.(df[var] .- getfield(mobj.pm, var)) .< tol])
+        append!(LL, [abs.(df[:, var] .- getfield(mobj.pm, var)) .< tol])
     end
 
     if !isnan(m)
-        append!(LL, [abs.(df[:m] .- m) .< tol])
+        append!(LL, [abs.(df[:, :m] .- m) .< tol])
     end
     index = .&(LL...)
 
@@ -243,7 +243,7 @@ function load_firm_params_bpr_inputs(svm_input_path::String; file_name::String="
 
     for var in obj_params
         if !(var in names(df))
-            df[var] = NaN
+            df[!, var] = NaN
         end
     end
     

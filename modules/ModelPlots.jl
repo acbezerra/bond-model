@@ -61,7 +61,6 @@ function par_val_adj(x::Symbol, val::Float64)
 end
 # ########################################################################
 
-
 vartitles = Dict{Symbol, String}(:vb => "\$V^B\$",
                                  :c => "C",
                                  :p => "\$P = Debt\$",
@@ -71,8 +70,10 @@ vartitles = Dict{Symbol, String}(:vb => "\$V^B\$",
                                  :MBR => "MBR (\$\\%\$)")
 
 
-# ** CVM Plots ##############################################################
-cvm_plots_title_params_order = [:mu_b, :m, :iota, :xi, :kappa, :sigmal]
+
+
+
+
 
 
 # ** SVM HeatMap and Surface Plots ##########################################
@@ -307,6 +308,8 @@ iso_cmaps = Dict{String, Any}("full_info" => Seaborn.get_cmap("YlGnBu_r"),
                               "pooling" => "BuPu",
                               "separating" => "RdPu")
 
+rmp_cmaps = Dict{String, Any}("misrep" => "GnBu",
+                              "pooling" => "BuGn")
 
 iso_plt_inputs = Dict{Symbol,Any}(:seaborn_style => "white", 
                                   :iso_levels => 20, 
@@ -448,18 +451,18 @@ function get_cvm_svm_dfs(cvmdict::Dict{Symbol,Array{Float64,1}},
     sbt = get_bt(;model="svm", m=m, m_comb_num=1)
 
     # Get Combination Numbers
-    cvm_combs = get_batch_comb_numbers(cbt, cvmdict)[:comb_num]
-    svm_combs = get_batch_comb_numbers(sbt, svmdict)[:comb_num]
+    cvm_combs = get_batch_comb_numbers(cbt, cvmdict)[:, :comb_num]
+    svm_combs = get_batch_comb_numbers(sbt, svmdict)[:, :comb_num]
     # #########################################################
 
 
     # Safe and Risky Firms' DFs ###############################
-    cvmdf = pt.cvm_data[[(x in cvm_combs) for x in pt.cvm_data[:comb_num]], :]
-    svmdf = pt.svm_data[[(x in svm_combs) for x in pt.svm_data[:comb_num]], :]
+    cvmdf = pt.cvm_data[[(x in cvm_combs) for x in pt.cvm_data[:, :comb_num]], :]
+    svmdf = pt.svm_data[[(x in svm_combs) for x in pt.svm_data[:, :comb_num]], :]
     # #########################################################
 
     # x-axis variable:
-    xvar =  [x for x in cvs_xvars if size(unique(svmdf[x]), 1)  == size(unique(pt.svm_data[x]), 1)]
+    xvar =  [x for x in cvs_xvars if size(unique(svmdf[:, x]), 1)  == size(unique(pt.svm_data[:, x]), 1)]
     if !isempty(xvar)
         if size(xvar, 1) > 1
             println("Multiple xvars!")
@@ -1449,16 +1452,16 @@ function get_cutoff_value(df::DataFrame, xvar::Symbol, yvar::Symbol, yval::Float
                                               Base.TwicePrecision{Float64},
                                               Base.TwicePrecision{Float64}}=range(.0, stop=.0, length=0))
 
-    if all(df[yvar] .> yval)
+    if all(df[:, yvar] .> yval)
         return Inf
-    elseif all(df[yvar] .< yval)
+    elseif all(df[:, yvar] .< yval)
         return -Inf
     else
         if size(xgrid, 1) == 0
-            xgrid = range(minimum(df[xvar]), stop=maximum(df[xvar]), length=10^5)
+            xgrid = range(minimum(df[:, xvar]), stop=maximum(df[:, xvar]), length=10^5)
         end
         
-        yinterp = Dierckx.Spline1D(df[xvar], df[yvar];
+        yinterp = Dierckx.Spline1D(df[:, xvar], df[:, yvar];
                                k=3, bc="extrapolate")
         return xgrid[argmin(abs.(yinterp(xgrid) .- yval))]
     end
@@ -1475,23 +1478,23 @@ function get_misrep_cutoff_value(xvar::Symbol, yvar::Symbol,
                                                                                          stop=.0,
                                                                                          length=0))
 
-    xvals = svmdf[xvar]
+    xvals = svmdf[:, xvar]
     if size(xgrid, 1) == 0
         xgrid = range(minimum(xvals), stop=maximum(xvals), length=10^5)
     end
     
-    misrep_yval_interp = Dierckx.Spline1D(misrepdf[Symbol(:r_, xvar)], 
-                                          misrepdf[Symbol(:r_, yvar)]; k=3, bc="extrapolate")
+    misrep_yval_interp = Dierckx.Spline1D(misrepdf[:, Symbol(:r_, xvar)], 
+                                          misrepdf[:, Symbol(:r_, yvar)]; k=3, bc="extrapolate")
     if xvar != :sigmah
-        fi_yvals = [maximum([x, cvmdf[1, yvar]]) for x in svmdf[yvar]]
+        fi_yvals = [maximum([x, cvmdf[1, yvar]]) for x in svmdf[:, yvar]]
         if xvar == :lambda
-            fi_yvals = svmdf[yvar]
+            fi_yvals = svmdf[:, yvar]
         end 
         fi_yval_interp = Dierckx.Spline1D(xvals, fi_yvals; k=3, bc="extrapolate")
         
         return xgrid[argmin(abs.(fi_yval_interp(xgrid) .- misrep_yval_interp(xgrid)))]
     else
-        fi_yval_interp = Dierckx.Spline1D(xvals, svmdf[yvar]; k=3, bc="extrapolate")
+        fi_yval_interp = Dierckx.Spline1D(xvals, svmdf[:, yvar]; k=3, bc="extrapolate")
 
         svm_cv = NaN
         svm_diff = abs.(fi_yval_interp(xgrid) .- misrep_yval_interp(xgrid))
@@ -1512,6 +1515,7 @@ end
 
 function rmp_plot_dirs(yvars::Array{Symbol, 1}, xvar::Symbol;
                        m::Float64=NaN,
+                       rf_model::String="svm", 
                        main_dir_path::String=main_dir_path,
                        plots_dir::String=plots_dir,
                        rmp_plots_dir::String=rmp_plots_dir,
@@ -1540,8 +1544,18 @@ function rmp_plot_dirs(yvars::Array{Symbol, 1}, xvar::Symbol;
     if misrep
         type_prefix = rmp_misrep_prefix
     end
-    
-    fig_name = string(rmp_fn_prefix, "_", type_prefix, "_", yvars_fig_name, "_", xvar,".", fname_ext)
+
+
+    if rf_model == "svm"
+        fig_name = string(rmp_fn_prefix, "_", type_prefix, "_",
+                          yvars_fig_name, "_", xvar,".", fname_ext)
+    elseif rf_model == "cvm"
+        fig_name = string("cvm_", rmp_fn_prefix, "_", type_prefix, "_",
+                          yvars_fig_name, "_", xvar,".", fname_ext)
+    else
+        println("Wrong Risky Firm Model. Please enter 'cvm' or 'svm'. Exiting...")
+        return
+    end
    
     return fig_folder, fig_name
 end
@@ -1563,14 +1577,14 @@ function plot_cvm_curve(ax, xvar::Symbol, yvar::Symbol,
                    linestyle=cvmlinestyles[1], 
                    marker=cvmmarkers[1])
     elseif size(xgrid, 1) == 0
-        ax.plot(sfdf[xvar], sfdf[yvar];
+        ax.plot(sfdf[:, xvar], sfdf[:, yvar];
                 color=cvm_curve_color, 
                 linewidth=1,
                 linestyle=cvmlinestyles[1],
                 marker=cvmmarkers[1], 
                 markersize=3)
     else
-        y_interp = Dierckx.Spline1D(sfdf[xvar], sfdf[yvar]; k=3, bc="extrapolate")
+        y_interp = Dierckx.Spline1D(sfdf[:, xvar], sfdf[:, yvar]; k=3, bc="extrapolate")
         ax.plot(xgrid, y_interp(xgrid);
                 color=cvm_curve_color, 
                 linewidth=1,
@@ -1605,15 +1619,15 @@ function plot_svm_curve(ax, xvar::Symbol, yvar::Symbol,
                    linewidth=1, 
                    linestyle=svmlinestyles[1], 
                    marker=svmmarkers[1])
-    elseif size(xgrid, 1) == 0
-        ax.plot(rfdf[xvar], rfdf[yvar];
+    elseif any([size(xgrid, 1) == 0, size(rfdf, 1) <= 3])
+        ax.plot(rfdf[:, xvar], rfdf[:, yvar];
                 color=svm_curve_color, 
                 linewidth=1,
                 linestyle=svmlinestyles[1],
                 marker=svmmarkers[1], 
                 markersize=3)
     else
-        y_interp = Dierckx.Spline1D(rfdf[xvar], rfdf[yvar]; k=3, bc="extrapolate")
+        y_interp = Dierckx.Spline1D(rfdf[:, xvar], rfdf[:, yvar]; k=3, bc="extrapolate")
         ax.plot(xgrid, y_interp(xgrid);
                 color=svm_curve_color, 
                 linewidth=1,
@@ -1623,21 +1637,38 @@ function plot_svm_curve(ax, xvar::Symbol, yvar::Symbol,
 
     # Add Legend to the Curve
     if xvar == :iota
-        svm_label = latexstring("(\$", 
-                                ModelPlots.cvs_xlabels[:iota][1], ", ",
-                                ModelPlots.cvs_xlabels[:lambda][1], ", ",
-                                ModelPlots.cvs_xlabels[:sigmah][1],
-                                "\$) = (",
-                                rfdf[1, :iota], ", ",
-                                rfdf[1, :lambda], ", ", 
-                                rfdf[1, :sigmah], ")")
+        if !isnan(rfdf[1, :sigmah])
+            svm_label = latexstring("(\$", 
+                                    ModelPlots.cvs_xlabels[:iota][1], ", ",
+                                    ModelPlots.cvs_xlabels[:lambda][1], ", ",
+                                    ModelPlots.cvs_xlabels[:sigmah][1],
+                                    "\$) = (",
+                                    rfdf[1, :iota], ", ",
+                                    rfdf[1, :lambda], ", ", 
+                                    rfdf[1, :sigmah], ")")
+        else
+            svm_label = latexstring("(\$", 
+                                    ModelPlots.cvs_xlabels[:iota][1], ", ",
+                                    ModelPlots.cvs_xlabels[:sigmah][1],
+                                    "\$) = (",
+                                    rfdf[1, :iota], ", ",
+                                    rfdf[1, :sigmal], ")")
+        end
     elseif xvar == :sigmah
-        svm_label = latexstring("(\$", 
-                                ModelPlots.cvs_xlabels[:iota][1], ", ",
-                                ModelPlots.cvs_xlabels[:lambda][1], 
-                                "\$) = (",
-                                rfdf[1, :iota], ", ",
-                                rfdf[1, :lambda], ")")
+        if !isnan(rfdf[1, :lambda])
+            svm_label = latexstring("(\$", 
+                                    ModelPlots.cvs_xlabels[:iota][1], ", ",
+                                    ModelPlots.cvs_xlabels[:lambda][1], 
+                                    "\$) = (",
+                                    rfdf[1, :iota], ", ",
+                                    rfdf[1, :lambda], ")")
+        else
+            svm_label = latexstring("\$", 
+                                    ModelPlots.cvs_xlabels[:iota][1], 
+                                    "=",
+                                    str_format_fun(cvs_xlabels[:iota][2],
+                                                   rfdf[1, :iota]), "\$ (b.p.)")
+        end
     elseif xvar == :lambda
         svm_label = latexstring("(\$", 
                                 ModelPlots.cvs_xlabels[:iota][1], ", ",
@@ -1669,12 +1700,16 @@ function plot_misrep_curve(ax, xvar::Symbol, yvar::Symbol,
                    linestyle=svmlinestyles[1], 
                    marker=svmmarkers[1])
     else
-        cols = [vcat([misrepdf[1, Symbol(:s_, xvar)], misrepdf[Symbol(:r_, xvar)]...]), 
-                vcat([misrepdf[1, Symbol(:s_, yvar)], misrepdf[Symbol(:r_, yvar)]...])]
+        if !in(misrepdf[1, Symbol(:s_, xvar)], misrepdf[:, Symbol(:r_, xvar)])
+            cols = [vcat([misrepdf[1, Symbol(:s_, xvar)], misrepdf[:, Symbol(:r_, xvar)]...]), 
+                    vcat([misrepdf[1, Symbol(:s_, yvar)], misrepdf[:, Symbol(:r_, yvar)]...])]
+        else
+            cols = [misrepdf[:, Symbol(:r_, xvar)], misrepdf[:, Symbol(:r_, yvar)]]
+        end
         
         tmp = sort!(DataFrame(Dict(zip([xvar, yvar], cols))), xvar)
         if size(xgrid, 1) > 0
-            y_interp = Dierckx.Spline1D(tmp[xvar], tmp[yvar]; k=3, bc="extrapolate")
+            y_interp = Dierckx.Spline1D(tmp[:, xvar], tmp[:, yvar]; k=3, bc="extrapolate")
             ax.plot(xgrid, y_interp(xgrid),
                     color=misrep_curve_color, 
                     linewidth=1,
@@ -1682,7 +1717,7 @@ function plot_misrep_curve(ax, xvar::Symbol, yvar::Symbol,
                     marker=svmmarkers[1], 
                     markersize=3)
         else
-            ax.plot(tmp[xvar], tmp[yvar];
+            ax.plot(tmp[:, xvar], tmp[:, yvar];
                     color=misrep_curve_color, 
                     linewidth=1,
                     linestyle=svmlinestyles[1],
@@ -1722,6 +1757,8 @@ function plot_vlines(ax, xvar;
                      cvm_misrep_xvar::Float64=NaN,
                      svm_misrep_xvar::Float64=NaN,
                      misrep_color::String=misrep_color)
+
+    xvar = (xvar == :sigmal) ? :sigmah : xvar
 
     # Form Dictionary with labels and values:
     vldict = vlines_labels_dict(xvar; fv_xvar=fv_xvar,
@@ -1982,7 +2019,7 @@ function rmp_subplotfun(fig::Figure, xvar::Symbol,
     else
         # Plot SVM Curve
         xloc = .95 * rfdf[end, xvar]
-        yloc = .1 * (maximum(rfdf[yvar]) - minimum(rfdf[yvar])) + minimum(rfdf[yvar])
+        yloc = .1 * (maximum(rfdf[:, yvar]) - minimum(rfdf[:, yvar])) + minimum(rfdf[:, yvar])
         ax = plot_svm_curve(ax, xvar, yvar, rfdf, xloc, yloc, xgrid)
         # ##############################################################
     end
@@ -2087,9 +2124,6 @@ function rmp_core_plot(fig, xvar::Symbol, yvars::Array{Symbol,1},
                        color_nrm_region::Bool=true,
                        color_conflict_region::Bool=false,
                        color_misrep_region::Bool=false)
-    
-    
- 
     
     axes = []
     count = 1
@@ -2207,9 +2241,9 @@ function rmp_fi_plotfun(xvar::Symbol, yvars::Array{Symbol,1},
 
     if size(xgrid, 1) == 0
         if size(sfdf, 1) > 1
-            xgrid = range(minimum(sfdf[xvar]), stop=maximum(sfdf[xvar]), length=10^5)
+            xgrid = range(minimum(sfdf[:, xvar]), stop=maximum(sfdf[:, xvar]), length=10^5)
         else
-            xgrid = range(minimum(rfdf[xvar]), stop=maximum(rfdf[xvar]), length=10^5)
+            xgrid = range(minimum(rfdf[:, xvar]), stop=maximum(rfdf[:, xvar]), length=10^5)
         end
     end
     
@@ -2236,9 +2270,17 @@ function rmp_fi_plotfun(xvar::Symbol, yvars::Array{Symbol,1},
     
     # Set Sup Title
     suptitle_yvars = join([cvs_ylabels[yvar] for yvar in yvars], " and ")
-    suptitle_params = join([string("\$", tlabels[x][1], "= \$ ",
-                                   str_format_fun(ModelPlots.tlabels[x][2], rfdf[1, x]))
-                         for x in rmp_plots_title_params_order], ", ")
+    if .&(!isnan(rfdf[1, :sigmah]), !isnan(rfdf[1, :lambda]))
+        suptitle_params = join([string("\$", tlabels[x][1], "= \$ ",
+                                       str_format_fun(ModelPlots.tlabels[x][2], rfdf[1, x]))
+                                for x in rmp_plots_title_params_order], ", ")
+    else
+        suptitle_params = join([string("\$", tlabels[x][1], "= \$ ",
+                                       str_format_fun(ModelPlots.tlabels[x][2], x!=:sigmal ? rfdf[1, x] : sfdf[1, x]))
+                                for x in rmp_plots_title_params_order],
+                                ", ")
+    end
+    
     plot_suptitle = latexstring(suptitle_yvars, " under Full Information \n", 
                              " for ", suptitle_params)
     fig.suptitle(plot_suptitle, fontsize=14)
@@ -2250,8 +2292,10 @@ function rmp_fi_plotfun(xvar::Symbol, yvars::Array{Symbol,1},
     
 
     if save_fig
+        rf_model = isnan(rfdf[1, :lambda]) ? "cvm" : "svm"
         fig_folder, fig_name = rmp_plot_dirs(yvars, xvar;
                                              m=rfdf[1, :m],
+                                             rf_model=rf_model,
                                              main_dir_path=main_dir_path,
                                              plots_dir=plots_dir,
                                              rmp_plots_dir=rmp_plots_dir,
@@ -2856,6 +2900,7 @@ end
 # * Contour Plots
 # ** Contour Auxiliary
 # include("_Contour/_contour_auxiliary.jl")
+
 function get_eq_type_df(eq_type::String, 
                         fidf::DataFrame, misrepdf::DataFrame, 
                         sepdf::DataFrame, pooldf::DataFrame)
@@ -2975,9 +3020,8 @@ function get_contour_plot_path_name(df::DataFrame, zfun_name::Symbol;
 end
 
 
-function get_region_grids(xgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}},
-                          ygrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},Base.TwicePrecision{Float64}},
-                          eqfun; N::Int64=10^5)
+function get_region_grids(xgrid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}},                          ygrid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}}, 
+               eqfun; N::Int64=10^5)
     ymin = minimum(ygrid)
     ymax = maximum(ygrid)
     
@@ -3075,7 +3119,8 @@ function get_contour_plot_title(df::DataFrame,
                                 ft::Symbol=Symbol(""),
                                 diff_fun::Bool=false,
                                 rm_prefix::Symbol=Symbol(""),
-                                params_list::Array{Symbol,1}=contour_plots_title_params_order)
+                                params_list::Array{Symbol,1}=contour_plots_title_params_order,
+                                s_fi_fv::Float64=NaN)
     
     eq_type = df[1, :eq_type]
 
@@ -3122,13 +3167,19 @@ function get_contour_plot_title(df::DataFrame,
                                      "\n for ", title_params)
         end   
     end
-    
+
+    if !isnan(s_fi_fv)
+        plot_title = latexstring(plot_title,
+                                 "\n (Safe Type's Full Information Firm Value = ",
+                                 str_format_fun("%.2f", s_fi_fv), ") \n")
+    end
     
     return plot_title
 end
 
 
 function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Float64,2};
+                         rmp_Z::Array{Float64, 2}=Array{Float64,2}(undef, 0, 2),
                          seaborn_style=iso_plt_inputs[:seaborn_style], 
                          iso_levels=iso_plt_inputs[:iso_levels],
                          heat_levels=iso_plt_inputs[:heat_levels],
@@ -3142,7 +3193,9 @@ function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Floa
                          heat_cols=iso_plt_inputs[:heat_cols],
                          cat_Z=[],
                          cat_cmap="GnBu",
-                         cat_alpha=.25)
+                         cat_alpha::Float64=.25,
+                         rmp_cmap=rmp_cmaps["misrep"],
+                         rmp_alpha::Float64=.15)
                          # cat_Z::Array{Int64, 2}=Array{Int64, 2}[])
     
     if isempty(heat_cmap)
@@ -3159,10 +3212,10 @@ function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Floa
     # Choose between subgrids or subplots ##################################
     if use_subgrid
         fig = PyPlot.figure(figsize=(w, h))
-        ax1 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols), (0, 0),
-                                  rowspan=subgrid_rows, colspan=iso_cols)
-        ax2 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols), (0, iso_cols),
-                                  rowspan=subgrid_rows, colspan=heat_cols)
+        ax1 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols),
+                                  (0, 0), rowspan=subgrid_rows, colspan=iso_cols)
+        ax2 = PyPlot.subplot2grid((subgrid_rows, iso_cols + heat_cols),
+                                  (0, iso_cols), rowspan=subgrid_rows, colspan=heat_cols)
     else
         fig, axs = PyPlot.subplots(1, 2, figsize=(w, h), sharey=true)
         ax1 = axs[1] # fig.add_subplot(121)
@@ -3174,6 +3227,12 @@ function plot_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{Floa
     ax1.clabel(CS, inline=5, fontsize=iso_fontsize)
     ax1.set_ylabel(latexstring("\$", xylabels[:sigmah][1], "\$"), labelpad=10)
     ax1.set_xlabel(latexstring("\$", xylabels[:iota][1], "\$"), labelpad=10)
+
+    # Color Region where Firm's change their RMP relative to
+    # their Full Information Eq. RMP: 
+    if !isempty(rmp_Z)
+        CS3 = ax1.contourf(X, Y, rmp_Z, cmap=rmp_cmap, alpha=rmp_alpha)
+    end
 
     CS2 = ax2.contourf(X, Y, Z, levels=heat_levels, cmap=heat_cmap)
     if use_subgrid
@@ -3217,6 +3276,7 @@ end
 
 function plot_iso_contour_curves(fd::Dict{Symbol, Any},
                                  zfun;
+                                 rmp_diff_fun=nothing,
                                  fig_title::LaTeXString=LaTeXString(""),
                                  file_path_name::String="",
                                  seaborn_style=iso_plt_inputs[:seaborn_style], 
@@ -3234,11 +3294,19 @@ function plot_iso_contour_curves(fd::Dict{Symbol, Any},
                                  fig_dpi::Int64=iso_plt_inputs[:fig_dpi],
                                  tight_pad=iso_plt_inputs[:tight_pad],
                                  h_pad=iso_plt_inputs[:h_pad],
-                                 w_pad=iso_plt_inputs[:w_pad])
+                                 w_pad=iso_plt_inputs[:w_pad],
+                                 rmp_cmap=rmp_cmaps["misrep"],
+                                 rmp_alpha::Float64=.15)
     
     X, Y, Z = form_mesh_grid(fd[:xvals], fd[:yvals], zfun)
 
-    fig, ax1, ax2 = plot_iso_curves(X, Y, Z; 
+    rmp_Z = Array{Float64, 2}(undef, 0, 2)
+    if rmp_diff_fun != nothing
+        _, _, rmp_Z = ModelPlots.form_mesh_grid(fd[:xvals], fd[:yvals], rmp_diff_fun)
+    end
+    
+    fig, ax1, ax2 = plot_iso_curves(X, Y, Z;
+                                    rmp_Z=rmp_Z,
                                     seaborn_style=seaborn_style, 
                                     iso_levels=iso_levels,
                                     heat_levels=heat_levels, 
@@ -3249,7 +3317,9 @@ function plot_iso_contour_curves(fd::Dict{Symbol, Any},
                                     use_subgrid=use_subgrid,
                                     subgrid_rows=subgrid_rows,
                                     iso_cols=iso_cols,
-                                    heat_cols=heat_cols)
+                                    heat_cols=heat_cols,
+                                    rmp_cmap=rmp_cmap,
+                                    rmp_alpha=rmp_alpha)
     
     if !isempty(fig_title)
         fig.suptitle(fig_title, fontsize=title_font_size)
@@ -3377,13 +3447,18 @@ function misrep_payoff_functions(fi_funs::Dict{Symbol, Any}, mp_fd::Dict{Symbol,
     mp_funs = Dict{Symbol, Any}(:xvar => xvar, :yvar => yvar)
 
     # Compute Type-Specific MBR under Full Information ################
-    mp_funs[:rm_mbr], mp_funs[:nrm_mbr] = get_rm_payoff_funs(mp_fd, mp_fd[:xvar], mp_fd[:yvar], :MBR)
+    mp_funs[:rm_mbr], mp_funs[:nrm_mbr] = get_rm_payoff_funs(mp_fd, mp_fd[:xvar], mp_fd[:yvar], :r_MBR)
     mp_funs[:rm_cond] = (x, y) -> mp_funs[:rm_mbr](x, y) >= mp_funs[:nrm_mbr](x, y)
+
+    # Choose RMP that maximizes the MBR in case of Misrepresentation
     mp_funs[:mbr] = (x, y) -> maximum([mp_fd[:r_MBR][xvar](x), 
                                        mp_fd[:r_MBR][yvar](y)])
+
+    # Difference between Misrep MBR and FI MBR 
     mp_funs[:mp_fi_mbr_diff] = (x, y) -> mp_funs[:mbr](x, y) - fi_funs[:mbr](x, y)
-    
-    mp_funs[:mp_fi_rm_diff] = (x, y) -> mp_funs[:rm_cond](x, y) != fi_funs[:rm_cond](x, y)
+
+    # Does the Misrep RMP differ from the optimal RMP in Full Info Eq?   
+    mp_funs[:mp_fi_rm_diff] = (x, y) -> (mp_funs[:rm_cond](x, y) != fi_funs[:rm_cond](x, y)) ? 1. : 0.
     
     for zvar in [z for z in contour_zvars if z != :MBR]
         zsym = contour_zvars_sym[zvar]
@@ -3421,20 +3496,20 @@ function jeq_payoff_functions(fi_funs::Dict{Symbol, Any}, jfd::Dict;
     zsym = contour_zvars_sym[r_obj_fun]
 
     # Risky Firm's Objective Function Payoff in case of Risk-Management v.s. No Risk-Management
-    jeq_funs[:risky][Symbol(:rm_, zsym)], jeq_funs[:risky][Symbol(:nrm_, zsym)] = get_rm_payoff_funs(jfd, xvar, yvar,
-                                                                                                    Symbol(:r_, r_obj_fun))
+    jeq_funs[:risky][Symbol(:rm_, zsym)], jeq_funs[:risky][Symbol(:nrm_, zsym)] = get_rm_payoff_funs(jfd, xvar, yvar, Symbol(:r_, r_obj_fun))
 
     # Choose Risk-Management if it maximizes Payoff
     jeq_funs[:risky][:rm_cond] = (x, y) -> jeq_funs[:risky][Symbol(:rm_, zsym)](x, y) >= jeq_funs[:risky][Symbol(:nrm_, zsym)](x, y)
-    jeq_funs[:risky][:jeq_fi_rm_diff] = (x, y) -> jeq_funs[:risky][:rm_cond](x, y) != fi_funs[:rm_cond](x, y)
+
+    # Does this RMP differ from the optimal RMP in Full Info Eq? 
+    jeq_funs[:risky][:jeq_fi_rm_diff] = (x, y) -> (jeq_funs[:risky][:rm_cond](x, y) != fi_funs[:rm_cond](x, y)) ? 1. : 0.
 
     # Risky Firm's Objective Function Payoff
     jeq_funs[:risky][zsym] = (x, y) -> maximum([jfd[Symbol(:r_, r_obj_fun)][xvar](x), 
                                                 jfd[Symbol(:r_, r_obj_fun)][yvar](y)])
 
-    # Difference between Joint and Full Information Equilibrium
+    # Difference in RMP between Joint and Full Information Equilibrium
     jeq_funs[:risky][Symbol(:jeq_fi_, zsym, :_diff)] = (x, y) -> jeq_funs[:risky][zsym](x, y) - fi_funs[zsym](x, y)
-
     
     # Safe Firm's Payoff Depends on what Risky Firm chooses 
     jeq_funs[:safe][Symbol(:rm_, zsym)], jeq_funs[:safe][Symbol(:nrm_, zsym)] = get_rm_payoff_funs(jfd, xvar, yvar,
@@ -3489,6 +3564,7 @@ function get_contour_equilibria_funs(fi_funs, mp_funs, pool_funs, sep_funs,
     fun_dict[:s_fv] = (x, y) -> (fun_dict[:fi_ind](x,y) * fi_fv + #fi_funs[:fv](x, y) +
                                  fun_dict[:sep_ind](x,y) * sep_funs[:safe][:fv](x, y) +
                                  fun_dict[:pool_ind](x,y) * pool_funs[:safe][:fv](x, y))
+    fun_dict[:bool_otc] = (x, y) -> (fun_dict[:s_fv](x, y) < fi_fv_fun(k_otc)) ? 1 : 0
     fun_dict[:bool_otc_ep] = (x, y) -> (fun_dict[:s_fv](x, y) < fi_fv_fun(k_otc)) ? 1 : fun_dict[:eq_bool](x, y)
 
     catd = Dict(zip([eq_cat_dict[x][1] for x in keys(eq_cat_dict)], 

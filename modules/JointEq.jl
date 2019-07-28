@@ -122,6 +122,7 @@ end
 mutable struct FirmSpecificParams
     iota::Float64
     lambda::Float64
+    sigmal::Float64
     sigmah::Float64
 end
 
@@ -133,7 +134,7 @@ mutable struct FirmCommonParams
     r::Float64
     gross_delta::Float64
     xi::Float64
-    sigmal::Float64
+    # sigmal::Float64
 end
 
 
@@ -193,9 +194,9 @@ end
 # Inputs -> in this order (need to define structs first)
 # include("_joint_inputs.jl")
 empty_jep = JointEqParams(vcat(fill(NaN,3), 
-                               FirmSpecificParams(fill(NaN,3)...),
-                               FirmSpecificParams(fill(NaN,3)...),
-                               FirmCommonParams(fill(NaN, 7)...))...)
+                               FirmSpecificParams(fill(NaN,4)...),
+                               FirmSpecificParams(fill(NaN,4)...),
+                               FirmCommonParams(fill(NaN, 6)...))...)
 
 # Directories and File Names
 ep_dir = "EP"
@@ -342,10 +343,12 @@ function ep_constructor(jep, sf_bt, rf_bt;
     end
 
     # Adjust parameter dictionaries
-    for var in [:alpha, :pi, :r, :gross_delta, :xi, :sigmal]
+    for var in [:alpha, :pi, :r, :gross_delta, :xi] #, :sigmal]
         sf_bt.mi._svm_dict[var] = getfield(jep.fcp, var)
         rf_bt.mi._svm_dict[var] = getfield(jep.fcp, var)
     end
+    sf_bt.mi._svm_dict[:sigmal] = jep.sfp.sigmal
+    rf_bt.mi._svm_dict[:sigmal] = jep.rfp.sigmal   
 
     # Form EP Safe Firm
     ep_sf_comb_num = get_batch_comb_num(sf_bt;
@@ -417,16 +420,18 @@ function ep_constructor(jep, sf_bt, rf_bt;
     if run_misrep
         misrep_jks = deepcopy(ep_jks)
         setfield!(misrep_jks, :mu_s, 1.)
-        setfield!(misrep_jks, :mu_b, fi_sf_mu_b)
+        if !isnan(fi_sf_mu_b)
+            setfield!(misrep_jks, :mu_b, fi_sf_mu_b)
+        end
         
         ep_misrep_eqdf = find_joint_optimal_vb(ep_jf, misrep_jks;
                                                mu_b=fi_sf_mu_b,
                                                rerun_fi_vb=true)
 
         # Add Objective Function columns
-        ep_misrep_eqdf[:obj_fun] = String(sf_obj_fun)
+        ep_misrep_eqdf[!, :obj_fun] .= String(sf_obj_fun)
         ep_misrep_eqdf[2, :obj_fun] = "misrep"
-        ep_misrep_eqdf[:eq_type] = "misrep"
+        ep_misrep_eqdf[!, :eq_type] .= "misrep"
         
         # Reshape
         ep_misrep_eqdf = reshape_sf_rf_df(ep_misrep_eqdf)
@@ -824,12 +829,12 @@ function interp_optimal_vbs(jf, jks, df::DataFrame;
                             spline_bc::String="extrapolate")
 
     # Form Refined Grid of Unique vbl values
-    vb_grid = range(minimum(df[:vbl]), stop=maximum(df[:vbl]), length=vbN)
+    vb_grid = range(minimum(df[:, :vbl]), stop=maximum(df[:, :vbl]), length=vbN)
     
     # Interpolate Equity and Equity Derivative Functions
     tmp = Dict()
     for var in [:rf_eq_deriv, :sf_eq_deriv] 
-        tmp[var] = Dierckx.Spline1D(df[:vbl], df[var]; k=spline_k, bc=spline_bc)
+        tmp[var] = Dierckx.Spline1D(df[:, :vbl], df[:, var]; k=spline_k, bc=spline_bc)
     end
 
     # Find Optimal VBs
@@ -886,13 +891,15 @@ function store_joint_eq_parameters(mu_s::Float64,
                                    kep::Float64,
                                    kotc::Float64;
                                    jep=empty_jep,
-                                   sfp=FirmSpecificParams(fill(NaN, 3)...),
-                                   rfp=FirmSpecificParams(fill(NaN, 3)...),
+                                   sfp=FirmSpecificParams(fill(NaN, 4)...),
+                                   rfp=FirmSpecificParams(fill(NaN, 4)...),
                                    s_iota::Float64=NaN,
                                    s_lambda::Float64=NaN,
+                                   s_sigmal::Float64=NaN,
                                    s_sigmah::Float64=NaN,
                                    r_iota::Float64=NaN,
                                    r_lambda::Float64=NaN,
+                                   r_sigmal::Float64=NaN,
                                    r_sigmah::Float64=NaN)
 
     # Set Market Parameters
@@ -919,14 +926,25 @@ function store_joint_eq_parameters(mu_s::Float64,
     if !isnan(s_lambda)
         setfield!(jep.sfp, :lambda, s_lambda)
     end
+    if !isnan(s_sigmal)    
+        setfield!(jep.sfp, :sigmal, s_sigmal)
+    else
+        setfield!(jep.sfp, :sigmal, svm_param_values_dict[:sigmal][1])
+    end
     if !isnan(s_sigmah)    
         setfield!(jep.sfp, :sigmah, s_sigmah)
     end
+    
     if !isnan(r_iota)
         setfield!(jep.rfp, :iota, r_iota)
     end
     if !isnan(r_lambda)
         setfield!(jep.rfp, :lambda, r_lambda)
+    end
+    if !isnan(r_sigmal)    
+        setfield!(jep.rfp, :sigmal, r_sigmal)
+    else
+        setfield!(jep.rfp, :sigmal, svm_param_values_dict[:sigmal][1])
     end
     if !isnan(r_sigmah)    
         setfield!(jep.rfp, :sigmah, r_sigmah)
@@ -938,8 +956,8 @@ function store_joint_eq_parameters(mu_s::Float64,
                            common_params[:pi],
                            common_params[:r],
                            svm_param_values_dict[:gross_delta][1],
-                           svm_param_values_dict[:xi][1],
-                           svm_param_values_dict[:sigmal][1])
+                           svm_param_values_dict[:xi][1]) #,
+                           # svm_param_values_dict[:sigmal][1])
     setfield!(jep, :fcp, fcp)
 
 
@@ -1225,11 +1243,22 @@ end
 
 # Reshape Misrep, Pool and Separating Eq DFs #######################################
 function reshape_sf_rf_df(df::DataFrame)
+    jeq_commoncols = commoncols
+    
+    # Case in which both firms are CVM
+    if .&(isnan.(df[:, :sigmah])...)
+        jeq_commoncols = [x for x in jeq_commoncols if x != :sigmal] 
+    end
+    
+    # List of firm-specific variables
+    non_specific_cols  = vcat(:sf_defaults_first,
+                              :eq_type,
+                              epmcols,
+                              jeq_commoncols, vbcols)
+
     specific_cols = [col for col in names(df) if 
-                     !(col in vcat(:sf_defaults_first,
-                                   :eq_type,
-                                   epmcols,
-                                   commoncols, vbcols))]
+                     !(col in non_specific_cols)]
+        
 
     # Capital Structure
     if df[1, :eq_type] == "full_info"
@@ -1243,7 +1272,7 @@ function reshape_sf_rf_df(df::DataFrame)
     end
 
     # Common Parameters
-    commondf =  DataFrame(df[1, commoncols])
+    commondf =  DataFrame(df[1, jeq_commoncols])
 
     # Safe Firm Results
     names!(sfdf, vcat([:sf_vb], [Symbol(:s_, col) for col in specific_cols
@@ -1390,7 +1419,6 @@ function remove_dup_save_df(df::DataFrame, eq_type::String, jks_fpath::String)
     
     df_fpath_name = string(jks_fpath, "/", df_name, ".csv")
     cols = (eq_type == "full_info") ? [x for x in names(df) if x != :datetime] : dup_rows_params
-    println(cols)
     
     if (string(df_name, ".csv") in readdir(jks_fpath))
         df_all = CSV.read(df_fpath_name)
@@ -1877,25 +1905,25 @@ function joint_eq_fd(jf; V0::Float64=NaN,
                             # vtgrid .-log(jks.vbl/jks.sf_vb), bond_prices)
     _, sf_df = eq_fd_export_results(jf.sf, jks, jks.vbl, sf_eq_dict; debt=debt_pr)
 
-    sf_df[:mu_s] = jks.mu_s
-    sf_df[:fi_vb] = jks.fi_sf_vb 
-    sf_df[:sf_vb] = jks.sf_vb
-    sf_df[:rf_vb] = NaN   
+    sf_df[!, :mu_s] .= jks.mu_s
+    sf_df[!, :fi_vb] .= jks.fi_sf_vb 
+    sf_df[!, :sf_vb] .= jks.sf_vb
+    sf_df[!, :rf_vb] .= NaN   
     
     rf_eq_dict = eq_fd_core(jf.rf, jks, jks.vbl,
                             rf_eq_vbl, rf_eq_max,
                             vtgrid, bond_prices)
                             # vtgrid .-log(jks.vbl/jks.rf_vb), bond_prices)
     _, rf_df = eq_fd_export_results(jf.rf, jks, jks.vbl, rf_eq_dict; debt=debt_pr)
-    rf_df[:mu_s] = jks.mu_s
-    rf_df[:fi_vb] = jks.fi_rf_vb 
-    rf_df[:sf_vb] = NaN
-    rf_df[:rf_vb] = jks.rf_vb
+    rf_df[!, :mu_s] .= jks.mu_s
+    rf_df[!, :fi_vb] .= jks.fi_rf_vb 
+    rf_df[!, :sf_vb] .= NaN
+    rf_df[!, :rf_vb] .= jks.rf_vb
     # ##############################################
 
     println(string("Total computation time: ", time() - tic))
 
-    return vcat([sf_df, rf_df]...)[jks_eq_fd_cols]
+    return vcat([sf_df, rf_df]...)[:, jks_eq_fd_cols]
 end
 
 
@@ -1970,6 +1998,11 @@ function compute_joint_eq_vb_results(jf, jks;
     if get_obj_model(jf.rf) == "svm"
         r_vbh = get_cvm_vb(jf.rf, jf.rf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
     end
+
+    if .&(isnan(s_vbh), isnan(r_vbh))
+        s_vbh = get_cvm_vb(jf.sf, jf.sf.pm.sigmal; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+        r_vbh = get_cvm_vb(jf.rf, jf.rf.pm.sigmal; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+    end
     vbh_max = maximum([x for x in [s_vbh, r_vbh] if !isnan(x)])
     vbh_min = minimum([x for x in [s_vbh, r_vbh] if !isnan(x)])
     
@@ -1995,6 +2028,7 @@ function compute_joint_eq_vb_results(jf, jks;
                                                     fi_rf_vb=jks.fi_rf_vb,
                                                     sf_defaults_first=true)
                            for vbl in vbl_grid])
+
     # Collect Results
     sf_resdf = vcat([DataFrame(x) for x in sf_res]...)
 
@@ -2076,25 +2110,24 @@ function compile_opt_vb_results(jf, jks, sfdf::DataFrame, rfdf::DataFrame)
                                            jks.fi_rf_vb; 
                                            sf_defaults_first=false)
     r2 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
-    if abs.(r2[isnan.(r2[:sf_vb]), :eq_deriv][1]) > 1e-2
+    if abs.(r2[isnan.(r2[:, :sf_vb]), :eq_deriv][1]) > 1e-2
         r2 = refine_contingent_vbs(jf, jks, sf_vb, rf_vb)
-        println(r2)
     end
     # ###############################################################
-    println("=====================================================")
-    println("=====================================================")
-    println(r2)
+    # println("=====================================================")
+    # println("=====================================================")
+    # println(r2)
     println("=====================================================")
     println("=====================================================")
     # Compile Results
     println("compiling results")
     df =  vcat([s1, s2, r1, r2]...)
-    df[:sf_defaults_first] = vcat([fill(true, 4), fill(false, 4)]...)
+    df[!, :sf_defaults_first] = vcat([fill(true, 4), fill(false, 4)]...)
 
     cols1 = [:sf_defaults_first,
              :fi_vb, :sf_vb, :rf_vb, :vb,
              :eq_deriv, :eq_min_val]
-    return df[vcat(cols1, [x for x in names(df) if !(x in cols1)]...)]
+    return df[:, vcat(cols1, [x for x in names(df) if !(x in cols1)]...)]
 end
 
 
@@ -2102,34 +2135,44 @@ function filter_joint_vb_results(df::DataFrame;
                                  tol1::Float64=-1e-2, tol2::Float64=1e-2)
 
     # Limited Liability Conditions ############################
-    cond1 = df -> .&([df[x] .>= tol1 for x in [:eq_deriv, :eq_min_val]]...)
+    cond1 = df -> .&([df[:, x] .>= tol1 for x in [:eq_deriv, :eq_min_val]]...)
 
     # When the Safe Firm defaults first, 
     # its equity and equity derivative should be zero
     # at the joint default barrier
-    sf_cond = df -> .&(df[:sf_defaults_first], 
-                       isnan.(df[:sf_vb]) .| (df[:eq_deriv] .<= tol2))
+    sf_cond = df -> .&(df[:, :sf_defaults_first], 
+                       isnan.(df[:, :sf_vb]) .| (df[:, :eq_deriv] .<= tol2))
 
     # When the Risky Firm defaults first, 
     # its equity and equity derivative should be zero
     # at the joint default barrier
-    rf_cond = df -> .&(df[:sf_defaults_first] .==false, 
-                       isnan.(df[:rf_vb]) .| (df[:eq_deriv] .<= tol2))
+    rf_cond = df -> .&(df[:, :sf_defaults_first] .==false, 
+                       isnan.(df[:, :rf_vb]) .| (df[:, :eq_deriv] .<= tol2))
 
     # Limited Liability Conditions must be satisfied by both firms:
     llcond = df -> sum(.&(cond1(df), (sf_cond(df) .| rf_cond(df)))) == 2
     # #########################################################
 
     ## Find vb candidates
-    vbdf = by(df, :vb, llcond = names(df) => x -> llcond(x))
-    vblist = vbdf[vbdf[:llcond], :vb]
-
+    # vbdf = by(df, :vb, llcond = names(df) => x -> llcond(x))
+    # vblist = vbdf[vbdf[:, :llcond], :vb]
     # Filter DataFrame
-    if !isempty(vblist)
-        return df[in.(df[:vb], vblist), :]
-    else
-        println(string("No results for mu_b in ", unique(df[:mu_b])))
+    # if !isempty(vblist)
+    #     return df[in.(df[:, :vb], vblist), :]
+    
+    LL = []
+    for x in groupby(df, [:vb, :sf_defaults_first])
+        if llcond(x)
+            push!(LL, DataFrame(x))
+        end
     end
+    vbdf = vcat(LL...)
+    
+    if isempty(vbdf)
+        println(string("No results for mu_b in ", unique(df[:, :mu_b])))
+        return
+    end
+    return vbdf
 end    
 
 
