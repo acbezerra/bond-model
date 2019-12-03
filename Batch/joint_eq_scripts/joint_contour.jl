@@ -19,29 +19,32 @@ modls = ["Batch", "ModelObj", "AnalyticFunctions",
          "BondPrInterp", "EqFinDiff", "ModelPlots",
          "FullInfoEq", "JointEq"]
 for modl in modls
-    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+    include(string(joinpath(module_path, modl), ".jl"))
 end
 
 
 println(string("ARGUMENTS: ", ARGS))
 # ################ SYS ARGUMENTS ################
 # Capture Combination Number:
-cn = parse(Int, ARGS[1])
-rerun_fi = parse(Bool, ARGS[2])
-run_misrep = parse(Bool, ARGS[3])
-run_pool = parse(Bool, ARGS[4])
-run_sep = parse(Bool, ARGS[5])
+# cn = parse(Int, ARGS[1])
+# rerun_fi = parse(Bool, ARGS[2])
+# run_misrep = parse(Bool, ARGS[3])
+# run_pool = parse(Bool, ARGS[4])
+# run_sep = parse(Bool, ARGS[5])
 
-# cn = 1
-# rerun_fi = true
-# run_misrep = true
-# run_pool = false
-# run_sep = false
+cn = 1
+rerun_fi = true
+run_misrep = true
+run_pool = false
+run_sep = false
 
 
 # INPUTS ###################################################
 # Measure of Safe Firms
 mu_s = .2
+
+# Safe Firm's Risk Management Costs
+sf_iota = 0.0 # 2.5 * 1e-4
 
 # Transaction Costs and Volatility Risk Parameters
 cvmdict = Dict{Symbol,Array{Float64,1}}(:sigmal => [0.15],
@@ -51,7 +54,7 @@ cvmdict = Dict{Symbol,Array{Float64,1}}(:sigmal => [0.15],
                                         :mu_b => [1.0],
                                         :xi => [1.0],
                                         :iota => [x for x in Batch.cvm_param_values_dict[:iota] 
-                                                  if .&(x >= 2.5 * 1e-4, x <= 20. * 1e-4)])
+                                                  if .&(x >= sf_iota, x <= 20. * 1e-4)])
 svmdict = deepcopy(cvmdict)
 svmdict[:lambda] = [.2]
 svmdict[:iota] = [.0]
@@ -68,9 +71,8 @@ cvmdf, svmdf, _ = ModelPlots.get_cvm_svm_dfs(cvmdict, svmdict;
 
 # Form Safe Firm ##########################################
 sf_model = "cvm"
-sf_iota = 2.5 * 1e-4
 sf_df = (sf_model == "cvm") ? cvmdf : svmdf
-sf_comb_num = sf_df[abs.(sf_df[:iota] .- sf_iota) .< 1e-5, :comb_num][1]
+sf_comb_num = sf_df[abs.(sf_df[:, :iota] .- sf_iota) .< 1e-5, :comb_num][1]
 sf_bt, sf = Batch.get_bt_mobj(; model=sf_model, comb_num=sf_comb_num)
 sf = ModelObj.set_opt_k_struct(sf, sf_df)
 # #########################################################
@@ -165,8 +167,8 @@ jeq = JointEq.ep_constructor(jep, jf.cvm_bt, jf.svm_bt;
 # Save Full Information Eq. Results
 if rerun_fi
     fi_tmp = vcat(jeq.sfdf, jeq.rfdf)
-    fi_tmp[:eq_type] = "full_info"
-    fi_tmp[:datetime] = Dates.now()
+    fi_tmp[!, :eq_type] .= "full_info"
+    fi_tmp[!, :datetime] .= Dates.now()
     CSV.write(fi_fpath_name, fi_tmp)
     
     
@@ -177,14 +179,25 @@ end
 
 # Save Misrepresentation Results
 if run_misrep
-    jeq.misrep[:datetime] = Dates.now()
+    jeq.misrep[!, :datetime] .= Dates.now()
     CSV.write(misrep_fpath_name, jeq.misrep)
-    
+   
     # Update
-    misrepdf = CSV.read(string(jks_fpath, "/", JointEq.eq_type_dict["misrep"][:dfn], ".csv"))
-    misrepdf = JointEq.remove_dup_save_df(vcat(misrepdf, jeq.misrep), "misrep", jks_fpath)
-end
+    misrepdf_fpath_name = string(jks_fpath, "/", JointEq.eq_type_dict["misrep"][:dfn], ".csv")
+    if isfile(misrepdf_fpath_name)
+        # Load file
+        misrepdf = CSV.read(misrepdf_fpath_name)
 
+        # New Update
+        # jeq.misrep[!, :sigmal] .= jeq.misrep[:, :s_sigmal]
+        # cols = [x for x in names(misrepdf) if !(x in [:s_sigmal, :r_sigmal])]
+
+        # Update
+        misrepdf = JointEq.remove_dup_save_df(vcat(misrepdf[:, cols], jeq.misrep[:, cols]), "misrep", jks_fpath)
+    else
+        misrepdf = CSV.write(misrep_fpath_name, jeq.misrep)
+    end
+end
 
 
 # ##########################

@@ -37,7 +37,7 @@ function full_info_eq_deriv_root_search(svm, df; N::Int64=10^5,
     eq_deriv_fun = Dierckx.Spline1D(df[:, :vb], df[:, :eq_deriv], k=3, bc="extrapolate")
     
     # Compute optimal VB:
-    res = DataFrame(vb = [NaN])
+    res = DataFrame(:vb => NaN)
     vbroots = roots(eq_deriv_fun; maxn=8)
 
     if !isempty(vbroots)
@@ -158,18 +158,20 @@ function form_mu_b_vb_pairs(svm, jks;
                             vbN2::Int64=10^5,
                             spline_k::Int64=3,
                             spline_bc::String="extrapolate")
-    tmp=DataFrame()
+
+    tmp = DataFrame()
     exit = false
     count = 0
     while !exit
         println(string("COUNT: ", count))
+
         # Form mu_b grid
         mu_b_grid = range(mu_b_min, stop=mu_b_max; length=mu_bN)
 
         # Get Optimal VB for each mu_b value
         if get_obj_model(svm) == "cvm"
             vbl_list = [get_cvm_vb(svm, svm.pm.sigmal;
-                               mu_b=mu_b, m=jks.m, c=jks.c, p=jks.p)
+                                   mu_b=mu_b, m=jks.m, c=jks.c, p=jks.p)
                         for mu_b in mu_b_grid]
         
         else
@@ -180,18 +182,18 @@ function form_mu_b_vb_pairs(svm, jks;
         end
 
         # Run Equity Finite Differences Method ###############
-        tmp = DataFrame(mu_b = mu_b_grid, vbl = vbl_list)
+        tmp = DataFrame(:mu_b => mu_b_grid, :vbl => vbl_list)
 
         # Evaluate exit condition
-        loc1 = tmp[:vbl] .<= 1.05 * get_param(svm, :V0)
+        loc1 = tmp[:, :vbl] .<= 1.05 * get_param(svm, :V0)
         cond1 = sum(loc1) <= .9 * mu_bN
 
-        loc2 = tmp[:vbl] .> .9 * get_param(svm, :V0)
+        loc2 = tmp[:, :vbl] .> .9 * get_param(svm, :V0)
         cond2 = sum(loc2) < maximum([2, .1 * mu_bN])
 
         if cond1
             ref_mu_b_grid = range(mu_b_min, stop=mu_b_max; length=10^5)
-            vblf = Dierckx.Spline1D(tmp[:mu_b], tmp[:vbl]; k=spline_k, bc=spline_bc)
+            vblf = Dierckx.Spline1D(tmp[:, :mu_b], tmp[:, :vbl]; k=spline_k, bc=spline_bc)
 
             mu_b_max = ref_mu_b_grid[argmin(abs.(vblf(ref_mu_b_grid) .- 1.05 * get_param(svm, :V0)))]
         elseif cond2
@@ -200,6 +202,7 @@ function form_mu_b_vb_pairs(svm, jks;
             exit = true
         end
         count += 1
+
     end
 
     return tmp
@@ -266,14 +269,14 @@ function find_optimal_bond_measure(svm;
     # Interpolate VB and Firm Value in mu_b #########
     funs = Dict()
     for var in [:vb, :firm_value]
-        funs[var] = Dierckx.Spline1D(df[:mu_b], df[var];
+        funs[var] = Dierckx.Spline1D(df[:, :mu_b], df[:, var];
                                      k=spline_k, bc=spline_bc)
     end
     # ###############################################
 
     # Form mu_b refined grid
-    mu_b_grid_ref = range(minimum(df[:mu_b]),
-                          stop=maximum(df[:mu_b]), length=mu_bN2)
+    mu_b_grid_ref = range(minimum(df[:, :mu_b]),
+                          stop=maximum(df[:, :mu_b]), length=mu_bN2)
 
     # Get optimal mu_b
     opt_mu_b = mu_b_grid_ref[argmax(funs[:firm_value](mu_b_grid_ref))]
@@ -293,7 +296,7 @@ function find_optimal_bond_measure(svm;
     # Filter to eliminate mu_b candidates for which there is not optimal vbl
     count = 1
     while .&(abs.(eqdf[1, :eq_deriv_min_val]) > tol, count<=10)
-        funs[:eq_deriv_min_val] = Dierckx.Spline1D(df[:mu_b], abs.(df[:eq_deriv_min_val]);
+        funs[:eq_deriv_min_val] = Dierckx.Spline1D(df[:, :mu_b], abs.(df[:, :eq_deriv_min_val]);
                                                    k=spline_k, bc=spline_bc)
         # Filter mu_b grid
         filtered_mu_b_grid = mu_b_grid_ref[funs[:eq_deriv_min_val](mu_b_grid_ref) .< tol]

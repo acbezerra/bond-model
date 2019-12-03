@@ -18,13 +18,13 @@ module_path = string(main_path, "/", "Julia/modules/")
 modls = ["Batch", "ModelObj", "AnalyticFunctions", 
          "BondPrInterp", "EqFinDiff", "ModelPlots"]
 for modl in modls
-    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+    include(string(joinpath(module_path, modl), ".jl"))
 end
 
 
 # SVM Surface & Heatmap Inputs #######################################
 svm_m=1.
-obj_funs = [:firm_value, :mbr]
+obj_funs = [:firm_value] #, :mbr]
 
 
 z_vars = [:c, :p, :vb, :debt, :equity, :firm_value, :leverage, :MBR]

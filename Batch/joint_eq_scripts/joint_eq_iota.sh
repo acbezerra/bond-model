@@ -20,9 +20,7 @@ mkdir -p ~/BondPricing/Julia/log_files/JEQ/$PBS_JOBID
 export JULIAWORKDIR=~/BondPricing/Julia/log_files/JEQ/$PBS_JOBID
 
 # Load Python and Julia Modules
-module load python/intelpython3
-export PATH=/home/artur/BondPricing/.julia/julia-1.1.1/bin:$PATH
-export LD_LIBRARY_PATH=/home/artur/BondPricing/.julia/julia-1.1.1/bin:$LD_LIBRARY_PATH
+source ~/BondPricing/Julia/Batch/module_loader.sh
 
 # $PBS_NUM_PPN gives the number of processors to be used in each node.
 # $PBS_ARRAYID gives the position in the vector of measures of safe firm

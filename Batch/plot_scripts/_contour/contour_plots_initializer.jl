@@ -24,7 +24,7 @@ end
 
 
 # Set Safe Type
-s_iota = 2.5 * 1e-4
+s_iota = 0.0 # 2.5 * 1e-4
 
 # ###############################################################################
 # Get OTC Results ###############################################################
@@ -36,7 +36,7 @@ cvmdict = Dict{Symbol,Array{Float64,1}}(:sigmal => [0.15],
                                         :mu_b => [1.0],
                                         :xi => [1.0],
                                         :iota => [x for x in Batch.cvm_param_values_dict[:iota] 
-                                                  if .&(x >= 2.5 * 1e-4, x <= 20. * 1e-4)])
+                                                  if .&(x >= s_iota, x <= 20. * 1e-4)])
 svmdict = deepcopy(cvmdict)
 svmdict[:kappa] = [25 * 1e-4]
 svmdict[:lambda] = [.2]
@@ -52,7 +52,7 @@ cvmdf, _, _ = ModelPlots.get_cvm_svm_dfs(cvmdict, svmdict;
 # ##############################################################################
 
 # Safe Type's Firm Value as a function of Transaction Costs Kappa
-cond = abs.(cvmdf[:iota] .- s_iota) .< 1e-5
+cond = abs.(cvmdf[:, :iota] .- s_iota) .< 1e-5
 fi_fv_fun = Dierckx.Spline1D(cvmdf[cond, :kappa] .* 1e4, cvmdf[cond, :firm_value]; 
                              k=3, bc="extrapolate")
 # ###############################################################################
@@ -72,18 +72,18 @@ sepdf = JointEq.process_results(jks_fpath, "separating")
 
 # Keep only the results for which mu_s = .2
 mu_s = .2
-pooldf = pooldf[pooldf[:mu_s] .== mu_s, :]
-sepdf = sepdf[sepdf[:mu_s] .== mu_s, :]
+pooldf = pooldf[pooldf[:, :mu_s] .== mu_s, :]
+sepdf = sepdf[sepdf[:, :mu_s] .== mu_s, :]
 
 # Iota and kappa in basis points
-fidf[:iota] .= fidf[:iota] .* 1e4
-fidf[:kappa] .= fidf[:kappa] .* 1e4
+fidf[!, :iota] .= fidf[:, :iota] .* 1e4
+fidf[!, :kappa] .= fidf[:, :kappa] .* 1e4
 for df in [misrepdf, sepdf, pooldf]
     for ft in [:s_, :r_]
-        df[Symbol(ft, :iota)] .= df[Symbol(ft, :iota)] .* 1e4
+        df[!, Symbol(ft, :iota)] .= df[:, Symbol(ft, :iota)] .* 1e4
     end
     
-    df[:kappa] .= df[:kappa] .* 1e4
+    df[!, :kappa] .= df[:, :kappa] .* 1e4
 end
 # ###############################################################################
 
@@ -91,7 +91,7 @@ end
 # ###############################################################################
 # Pick Safe Type and Interpolate Firm Value, MBR and Leverage on iota and sigmah 
 # ###############################################################################
-cond = [abs.(iota .- s_iota * 1e4) .> 1e-5 for iota in fidf[:iota]]
+cond = [abs.(iota .- s_iota * 1e4) .> 1e-5 for iota in fidf[:, :iota]]
 fi_fd = ModelPlots.interp_z_values(fidf[cond, :])
 mp_fd = ModelPlots.interp_z_values(misrepdf)
 pool_fd = ModelPlots.interp_z_values(pooldf)
@@ -138,6 +138,6 @@ fun_dict = ModelPlots.get_contour_equilibria_funs(fi_funs,
                                                   fi_fv_fun,
                                                   k_otc)
 
-yvals = [x for x in pooldf[:r_sigmah] if .&(!isnan(x), x>.0)]
-xvals = [x for x in pooldf[:r_iota] if .&(!isnan(x), x>.0)]
+yvals = [x for x in pooldf[:, :r_sigmah] if .&(!isnan(x), x>.0)]
+xvals = [x for x in pooldf[:, :r_iota] if .&(!isnan(x), x>.0)]
 pltd = ModelPlots.get_eq_contour_mesh_grid(xvals, yvals, fun_dict, N=10^3)

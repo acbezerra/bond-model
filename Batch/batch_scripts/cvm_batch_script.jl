@@ -11,11 +11,11 @@ start_tic = time_ns()
 
 main_path = "/home/artur/BondPricing"
 module_path = string(main_path, "/", "Julia/modules/")
-include(string(module_path, "/", "TestFunctions.jl"))
+# include(string(module_path, "/", "TestFunctions.jl"))
 modls = ["Batch", "ModelObj", "AnalyticFunctions", 
          "BondPrInterp", "EqFinDiff"]
 for modl in modls
-    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+    include(string(joinpath(module_path, modl), ".jl"))
 end
 
 
@@ -26,7 +26,7 @@ m_comb_num = parse(Int, ARGS[1])
 
 # ###############################################
 
-firm_obj_fun=:MBR
+firm_obj_fun=:firm_value
 
 # Start Timer
 tic = time_ns()

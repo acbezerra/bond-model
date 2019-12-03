@@ -345,7 +345,8 @@ end
 
 
 function eq_fd_core(svm, ks, vbl, eq_vbl,
-                    eq_max, vgrid, bond_prices; V0::Float64=NaN)
+                    eq_max, vgrid, bond_prices;
+                    V0::Float64=NaN, cov_gross_delta::Float64=NaN)
     core_tic = time()
 
     # ##################################
@@ -354,7 +355,21 @@ function eq_fd_core(svm, ks, vbl, eq_vbl,
     if get_obj_model(svm) == "cvm" 
         cvm_eqh = NaN
     else
+        # capture original dividend rate
+        tmp_gross_delta = getfield(svm.pm, :gross_delta)
+
+        # set covenant dividend rate value if available
+        if !isnan(cov_gross_delta)
+            setfield!(svm.pm, :gross_delta, cov_gross_delta)
+        end
+
+        # compute post-volatility shock equity values
         cvm_eqh = eq_fd_core_cvmh_eq_values(svm, ks, vbl, vgrid)
+
+        # restore gross dividend rate:
+        if !isnan(cov_gross_delta)
+            setfield!(svm.pm, :gross_delta, tmp_gross_delta)
+        end
     end
 
     # #################################

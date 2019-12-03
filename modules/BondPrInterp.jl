@@ -719,6 +719,11 @@ function get_cvm_debt_price(svm, vb::Float64,
     end
 
     mu_b, m, c, p = get_k_struct(svm; mu_b=mu_b, m=m, c=c, p=p)
+
+    println(string(" mu_b = ", mu_b))
+    println(string(" m = ", m))
+    println(string(" c = ", c))
+    println(string(" p = ", p))
     # ####################################
     
     # vb = get_cvm_vb(svm, sigma; c=c, p=p)

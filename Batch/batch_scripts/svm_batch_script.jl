@@ -11,11 +11,11 @@ start_tic = time_ns()
 
 main_path = "/home/artur/BondPricing"
 module_path = string(main_path, "/", "Julia/modules/")
-include(string(module_path, "/", "TestFunctions.jl"))
+# include(string(module_path, "/", "TestFunctions.jl"))
 modls = ["Batch", "ModelObj", "AnalyticFunctions", 
          "BondPrInterp", "EqFinDiff"]
 for modl in modls
-    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+    include(string(joinpath(module_path, modl), ".jl"))
 end
 
 
@@ -198,7 +198,6 @@ while c_counter < size(bt.coupon_grid, 1)
         tic2 = time_ns()
         
         println(debt_at_par_cp_path_fname)
-        
         if !skip_all_eqdf | !(all_eq_fd_cp_fname in readdir(bt.mi.comb_res_path))
             # Load DFI 
             df = Batch.conditionally_load_df(:DFI, debt_at_par_cp_path_fname)

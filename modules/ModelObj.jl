@@ -243,7 +243,7 @@ function load_firm_params_bpr_inputs(svm_input_path::String; file_name::String="
 
     for var in obj_params
         if !(var in names(df))
-            df[!, var] = NaN
+            df[!, var] .= NaN
         end
     end
     

@@ -71,7 +71,7 @@ vartitles = Dict{Symbol, String}(:vb => "\$V^B\$",
 
 
 
-
+cvm_plots_title_params_order = [:mu_b, :m, :iota, :xi, :kappa, :sigma]
 
 
 
@@ -193,7 +193,7 @@ function vlines_labels_dict(xvar; fv_xvar::Float64=NaN,
                     :misrep1 => Dict(zip([:value, :xsym, :color],
                                          [misrep1_xvar, xsym_dict[:misrep1], misrep_color])),
                     :misrep2 => Dict(zip([:value, :xsym, :color],
-                                        [misrep2_xvar, "", misrep_color])))
+                                        [misrep2_xvar, xsym_dict[:misrep2], misrep_color])))
     end
 end
 
@@ -360,7 +360,7 @@ end
 function PlotsObj(bt;
                   load_cvm_data::Bool=true,
                   load_svm_data::Bool=true,
-                  firm_obj_fun::Symbol=:MBR,
+                  firm_obj_fun::Symbol=:firm_value, #:MBR,
                   cvm_m::Float64=NaN,
                   svm_m::Float64=NaN,
                   xylabels::Dict{Symbol, Array{String, 1}}=xylabels,
@@ -462,7 +462,7 @@ function get_cvm_svm_dfs(cvmdict::Dict{Symbol,Array{Float64,1}},
     # #########################################################
 
     # x-axis variable:
-    xvar =  [x for x in cvs_xvars if size(unique(svmdf[:, x]), 1)  == size(unique(pt.svm_data[:, x]), 1)]
+    xvar =  [x for x in cvs_xvars if size(unique(svmdf[:, x]), 1) == size(unique(pt.svm_data[:, x]), 1)]
     if !isempty(xvar)
         if size(xvar, 1) > 1
             println("Multiple xvars!")
@@ -477,9 +477,9 @@ end
 # * CVM Plot Methods
 # include("_cvm_plot_methods.jl")
 function cvm_data_handler(pt)
-    kappa_vals = unique(pt.cvm_data[:kappa])
-    sigmal_vals = unique(pt.cvm_data[:sigmal])
-    iota_vals = [ i*10^4 for i in unique(pt.cvm_data[:iota]) if i < maximum(pt.cvm_data[:iota])]
+    kappa_vals = unique(pt.cvm_data[:, :kappa])
+    sigmal_vals = unique(pt.cvm_data[:, :sigmal])
+    iota_vals = [ i*10^4 for i in unique(pt.cvm_data[:, :iota]) if i < maximum(pt.cvm_data[:, :iota])]
     # scalarMap = Seaborn.color_palette("cool", n_colors=size(sigma_vals, 1))
     scalarMap = Seaborn.get_cmap("cool", size(sigmal_vals, 1))
     l_styles = ["-" , ":", "--", "-."]
@@ -505,11 +505,11 @@ function cvm_single_axis_plot(pt, fig, plot_sub_num::Int64, varname::Symbol;
     ax = fig.add_subplot(plot_sub_num)
     for j in 1:size(sigmal_vals, 1)
         colorVal = scalarMap(j)
-        pos = .&(abs.(pt.cvm_data[:kappa] .- kappa) .< 1e-6,
-                 abs.(pt.cvm_data[:sigmal] .- sigmal_vals[j]) .< 1e-6)
+        pos = .&(abs.(pt.cvm_data[:, :kappa] .- kappa) .< 1e-6,
+                 abs.(pt.cvm_data[:, :sigmal] .- sigmal_vals[j]) .< 1e-6)
 
         if (abs.(sigmal_vals[j] .- sigma_low) .< 1e-6)
-            pos = .&(pos, [(x .* 10^4 in iota_vals) for x in pt.cvm_data[:iota]])
+            pos = .&(pos, [(x .* 10^4 in iota_vals) for x in pt.cvm_data[:, :iota]])
                      
             ax.plot(pt.cvm_data[pos, :iota] .* 10^4,
                     pt.cvm_data[pos, varname],
@@ -572,11 +572,11 @@ function cvm_double_axes_plot(pt, fig,
     ax2 = ax1.twinx()
     for j in 1:size(sigmal_vals, 1)
         colorVal = scalarMap(j)
-        pos = .&(abs.(pt.cvm_data[:kappa] .- kappa) .< 1e-6,
-                 abs.(pt.cvm_data[:sigmal] .- sigmal_vals[j]) .< 1e-6)
+        pos = .&(abs.(pt.cvm_data[:, :kappa] .- kappa) .< 1e-6,
+                 abs.(pt.cvm_data[:, :sigmal] .- sigmal_vals[j]) .< 1e-6)
 
         if (abs.(sigmal_vals[j] .- sigma_low) .< 1e-6)
-            pos = .&(pos, [(x .* 10^4 in iota_vals) for x in pt.cvm_data[:iota]])
+            pos = .&(pos, [(x .* 10^4 in iota_vals) for x in pt.cvm_data[:, :iota]])
 
 
             ax1.plot(pt.cvm_data[pos, :iota] .* 10^4,
@@ -692,10 +692,10 @@ function plot_cvm_optimal_solutions(pt, var::Symbol;
                                     graph_format::String="png")
 
     if isnan(kappa)
-        kappa = minimum(unique(pt.cvm_data[:kappa]))
+        kappa = minimum(unique(pt.cvm_data[:, :kappa]))
     end
     if isnan(sigma_low)
-        sigma_low = minimum(unique(pt.cvm_data[:sigmal]))
+        sigma_low = minimum(unique(pt.cvm_data[:, :sigmal]))
     end
 
     Seaborn.set_style("darkgrid")
@@ -714,9 +714,9 @@ function plot_cvm_optimal_solutions(pt, var::Symbol;
 
     if save_fig
         fixed_params = Dict{Symbol, Any}(:obj_fun => Symbol(pt.cvm_data[1, :obj_fun]),
-                                         :mu_b => unique(pt.cvm_data[:mu_b])[1],
-                                         :m => unique(pt.cvm_data[:m])[1],
-                                         :xi => unique(pt.cvm_data[:xi])[1],
+                                         :mu_b => unique(pt.cvm_data[:, :mu_b])[1],
+                                         :m => unique(pt.cvm_data[:, :m])[1],
+                                         :xi => unique(pt.cvm_data[:, :xi])[1],
                                          :kappa => kappa,
                                          :sigmal => sigma_low)
         
@@ -754,9 +754,9 @@ function svm_interp_smooth_surface(pt, fixed_params::Dict{Symbol,Float64},
     # Variables
     xy_vars = [:kappa, :lambda, :sigmah]
 
-    kappa_vec = unique(pt._svm_surf[:kappa])
-    sigmah_vec = unique(pt._svm_surf[:sigmah])
-    lambda_vec = unique(pt._svm_surf[:lambda])
+    kappa_vec = unique(pt._svm_surf[:, :kappa])
+    sigmah_vec = unique(pt._svm_surf[:, :sigmah])
+    lambda_vec = unique(pt._svm_surf[:, :lambda])
 
     # xy axes - pick 2 variables from (kappa, lambda, sigmah):
     xy_list = [var for var in xy_vars if 
@@ -787,22 +787,22 @@ function svm_interp_smooth_surface(pt, fixed_params::Dict{Symbol,Float64},
     z_val = Array{Float64}(undef, size(x_vec, 1) .* size(y_vec, 1), 1)
 
     # Boolean Indexer for Fixed Parameter Values:            
-    pos_loc = [(abs.(pt._svm_surf[x] .- fixed_params[x]) .< 1e-6) 
+    pos_loc = [(abs.(pt._svm_surf[:, x] .- fixed_params[x]) .< 1e-6) 
                                 for x in keys(fixed_params)]
     bool_loc =  .&(pos_loc...) # sum(pos_loc) .== size(pos_loc, 1)
 
     for i in 1:size(comb, 1)
         if .&((:kappa in xy_list), (:sigmah in xy_list))
-            value = pt._svm_surf[.&((abs.(pt._svm_surf[:kappa] .- comb[i, 1]) .< 1e-6),
-                                    (abs.(pt._svm_surf[:sigmah] .- comb[i, 2]) .< 1e-6),
+            value = pt._svm_surf[.&((abs.(pt._svm_surf[:, :kappa] .- comb[i, 1]) .< 1e-6),
+                                    (abs.(pt._svm_surf[:, :sigmah] .- comb[i, 2]) .< 1e-6),
                                     bool_loc), z_var][1]
         elseif .&((:kappa in xy_list), (:lambda in xy_list))
-            value = pt._svm_surf[.&((abs.(pt._svm_surf[:kappa] .- comb[i, 1]) .< 1e-6),
-                                    (abs.(pt._svm_surf[:lambda] .- comb[i, 2]) .< 1e-6),
+            value = pt._svm_surf[.&((abs.(pt._svm_surf[:, :kappa] .- comb[i, 1]) .< 1e-6),
+                                    (abs.(pt._svm_surf[:, :lambda] .- comb[i, 2]) .< 1e-6),
                                      bool_loc), z_var][1]
         else
-            value = pt._svm_surf[.&((abs.(pt._svm_surf[:lambda] .- comb[i, 1]) .< 1e-6),
-                                    (abs.(pt._svm_surf[:sigmah] .- comb[i, 2]) .< 1e-6),
+            value = pt._svm_surf[.&((abs.(pt._svm_surf[:, :lambda] .- comb[i, 1]) .< 1e-6),
+                                    (abs.(pt._svm_surf[:, :sigmah] .- comb[i, 2]) .< 1e-6),
                                     bool_loc), z_var][1]
         end
 
@@ -882,7 +882,7 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     # Localize before changing kappa to basis points:
     cond = true
     for key in keys(fixed_params)
-        cond = .&(cond, (abs.(svmdf[key] .- fixed_params[key]) .< 1e-6))
+        cond = .&(cond, (abs.(svmdf[:, key] .- fixed_params[key]) .< 1e-6))
     end
 
     # Sigmah on Y-axis, Kappa on X-axis:
@@ -891,7 +891,7 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     if .&((:sigmah in xy_list), (:kappa in xy_list))
         cols = vcat([:sigmah, :kappa], [z_var])
         # Kappa in Basis Points:
-        svmdf[:kappa] .= convert.(Int64, svmdf[:kappa] .* 1e4)
+        svmdf[!, :kappa] .= convert.(Int64, svmdf[:, :kappa] .* 1e4)
     elseif .&((:sigmah in xy_list), (:lambda in xy_list))
         cols = vcat([:sigmah, :lambda], [z_var])
         # Kappa in Basis Points
@@ -899,12 +899,12 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     else
         cols = vcat([:lambda, :kappa], [z_var])
         # Kappa in Basis Points:
-        svmdf[:kappa] .=  convert.(Int64, svmdf[:kappa] .* 1e4)
+        svmdf[!, :kappa] .=  convert.(Int64, svmdf[:, :kappa] .* 1e4)
     end
 
     # Pivot Table for Plot: ##############################
-    xtickvals = unique(svmdf[cols[2]])
-    ytickvals = unique(svmdf[cols[1]])
+    xtickvals = unique(svmdf[:, cols[2]])
+    ytickvals = unique(svmdf[:, cols[1]])
     pivotdf = unstack(svmdf[cond, cols], cols[1], cols[2], cols[3])
     Z = convert(Matrix, pivotdf[:, [x for x in names(pivotdf) if !(x in cols)]])
 
@@ -1191,7 +1191,7 @@ function svm_plot_heatmap_surf(pt, xy_list::Array{Symbol, 1},
     #PyPlot.show()
 
     if save_fig
-        m = unique(pt._svm_surf[:m])[1]
+        m = unique(pt._svm_surf[:, :m])[1]
         folder_path, file_name = svm_heat_surf_plot_path_fname(pt, xy_list, 
                                                                z_var, fixed_params;
                                                                title_params_order=title_params_order)
@@ -1307,12 +1307,12 @@ function cvm_vs_svm_plotfun(cvmdf, svmdf,
     pchipflist = []
     xpos=0.
     i = 1
-    for dval in unique(svmdf[dvar])
+    for dval in unique(svmdf[:, dvar])
         # Slice SVM DataFrame
-        svm_slice = svmdf[abs.(svmdf[dvar] .- dval) .< 1e-6, :]
+        svm_slice = svmdf[abs.(svmdf[:, dvar] .- dval) .< 1e-6, :]
 
         # Plot Curve
-        ax.plot(svm_slice[xvar], svm_slice[yvar],
+        ax.plot(svm_slice[:, xvar], svm_slice[:, yvar],
                 color="blue", 
                 linewidth=1,
                 linestyle=svmlinestyles[i],
@@ -1326,14 +1326,14 @@ function cvm_vs_svm_plotfun(cvmdf, svmdf,
 
 
         # Interpolate SVM Curves and Store Them
-        pchipf = Dierckx.Spline1D(svm_slice[xvar], svm_slice[yvar];
+        pchipf = Dierckx.Spline1D(svm_slice[:, xvar], svm_slice[:, yvar];
                                   k=3, bc="extrapolate")
         push!(pchipflist, pchipf)
 
 
-        if dval == unique(svmdf[dvar])[end] 
-            xvals = range(minimum(svm_slice[xvar]),
-                          stop=maximum(svm_slice[xvar]), length=10^4)
+        if dval == unique(svmdf[:, dvar])[end] 
+            xvals = range(minimum(svm_slice[:, xvar]),
+                          stop=maximum(svm_slice[:, xvar]), length=10^4)
             xpos = svm_slice[end, xvar]
         end
 
@@ -1343,10 +1343,10 @@ function cvm_vs_svm_plotfun(cvmdf, svmdf,
     
 
     # Plot CVM Curves #############################################
-    for dval in unique(cvmdf[dvar])
+    for dval in unique(cvmdf[:, dvar])
         # Slice CVM DataFrame
         if !isnan(dval)
-            cvm_slice = cvmdf[abs.(cvmdf[dvar] .- dval) .< 1e-6, :]
+            cvm_slice = cvmdf[abs.(cvmdf[:, dvar] .- dval) .< 1e-6, :]
         else
             cvm_slice = cvmdf
         end
@@ -1413,12 +1413,12 @@ end
 function df_slicer(pt, i::Int64, combs; model::String="svm")
     tmp = combs[i]
     if model == "svm"
-        svmloc = sum([abs.(pt.svm_data[x] .- tmp[x]) .< 1e-4 
+        svmloc = sum([abs.(pt.svm_data[:, x] .- tmp[x]) .< 1e-4 
                       for x in keys(tmp)]) .== length(keys(tmp))
         return pt.svm_data[svmloc, :]
         # sort!(pt.svm_data[svmloc, :], xvar)
     else
-        cvmloc = sum([abs.(pt.cvm_data[x] .- tmp[x]) .< 1e-4 
+        cvmloc = sum([abs.(pt.cvm_data[:, x] .- tmp[x]) .< 1e-4 
                       for x in keys(tmp)]) .== length(keys(tmp))
         return pt.cvm_data[cvmloc, :]
     end
@@ -1760,6 +1760,10 @@ function plot_vlines(ax, xvar;
 
     xvar = (xvar == :sigmal) ? :sigmah : xvar
 
+    if abs(cvm_misrep_xvar - fv_xvar) < 1e-5
+            cvm_misrep_xvar = NaN
+    end
+    
     # Form Dictionary with labels and values:
     vldict = vlines_labels_dict(xvar; fv_xvar=fv_xvar,
                                 fv_color=fv_color,
@@ -1769,6 +1773,7 @@ function plot_vlines(ax, xvar;
                                 svm_misrep_xvar=svm_misrep_xvar,
                                 misrep_color=misrep_color)
 
+   
     xkeys = [x for x in keys(vldict) if .&(!isnan(vldict[x][:value]), !isinf(vldict[x][:value]))] 
     minor_ticks = [vldict[x][:value] for x in xkeys]
     minor_labels = [vldict[x][:xsym] for x in xkeys]
@@ -2292,7 +2297,7 @@ function rmp_fi_plotfun(xvar::Symbol, yvars::Array{Symbol,1},
     
 
     if save_fig
-        rf_model = isnan(rfdf[1, :lambda]) ? "cvm" : "svm"
+        rf_model = isnan(rfdf[end, :lambda]) ? "cvm" : "svm"
         fig_folder, fig_name = rmp_plot_dirs(yvars, xvar;
                                              m=rfdf[1, :m],
                                              rf_model=rf_model,
@@ -2917,10 +2922,10 @@ end
 
 
 function slice_df(df::DataFrame, svar::Symbol; tol::Float64=1e-5)
-    if any(isnan.(df[svar]))
-        return df[isnan.(df[svar]) .==false, :]
-    elseif any(abs.(df[svar] .- .0) .< tol)
-        return df[abs.(df[svar] .- .0) .> tol, :]
+    if any(isnan.(df[:, svar]))
+        return df[isnan.(df[:, svar]) .==false, :]
+    elseif any(abs.(df[:, svar] .- .0) .< tol)
+        return df[abs.(df[:, svar] .- .0) .> tol, :]
     end
 end
 
@@ -2948,8 +2953,8 @@ function interp_z_values(df::DataFrame;
 
     fd = Dict{Symbol, Any}(:xvar => xvar,
                            :yvar => yvar,
-                           :xvals => xdf[Symbol(ft_xy, xvar)],
-                           :yvals => ydf[Symbol(ft_xy, yvar)])
+                           :xvals => xdf[:, Symbol(ft_xy, xvar)],
+                           :yvals => ydf[:, Symbol(ft_xy, yvar)])
 
     if !(zvars[1] in names(df))
         zvars = vcat([Symbol(prefix_z, zvar) for prefix_z in ft_z, zvar in zvars]...)
@@ -2958,9 +2963,9 @@ function interp_z_values(df::DataFrame;
     # Interpolate Functions
     for zvar in zvars
         fd[zvar] = deepcopy(tmpdict)
-        fd[zvar][xvar] = Dierckx.Spline1D(fd[:xvals], xdf[zvar], 
+        fd[zvar][xvar] = Dierckx.Spline1D(fd[:xvals], xdf[:, zvar], 
                                           k=spline_k, bc=spline_bc)
-        fd[zvar][yvar] = Dierckx.Spline1D(fd[:yvals], ydf[zvar], 
+        fd[zvar][yvar] = Dierckx.Spline1D(fd[:yvals], ydf[:, zvar], 
                                           k=spline_k, bc=spline_bc)
     end
         

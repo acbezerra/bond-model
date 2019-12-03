@@ -14,14 +14,14 @@ module_path = string(main_path, "/", "Julia/modules/")
 modls = ["ModelObj", "AnalyticFunctions", 
          "BondPrInterp", "EqFinDiff", "Batch"]
 for modl in modls
-    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+    include(string(joinpath(module_path, modl), ".jl"))
 end
 
 # #########################################################
 # ######################## INPUTS #########################
 # #########################################################
 # Choose model
-model="svm"
+model="cvm"
 
 # Debt Maturity
 m = 1.

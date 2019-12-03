@@ -21,7 +21,7 @@ end
 
 plot_script_path = string(main_path, "/Julia/Batch/plot_scripts")
 plots_xvar_dir = "rmp_iota"
-rerun_misrep = true
+rerun_misrep =  true
 save_misrepdf = true
 
 # * Load Full Information Results
@@ -50,7 +50,7 @@ cvmdf, svmdf, _ = ModelPlots.get_cvm_svm_dfs(cvmdict, svmdict;
 
 # Set Targeted Safe Firm
 sf_model = "cvm"
-sf_iota = 2.5 * 1e-4
+sf_iota = 0.0 # 2.5 * 1e-4
 sf_comb_num = cvmdf[abs.(cvmdf[:, :iota] .- sf_iota) .< 1e-5, :comb_num][1]
 # #########################################################
 
@@ -156,12 +156,13 @@ mbr_iota = ModelPlots.get_cutoff_value(sfdf, :iota,
                                        xgrid=xgrid)
 
 # iota : FI MBR = Misrep MBR
-cvm_misrep_iota = ModelPlots.get_cutoff_value(sfdf, :iota, :MBR, misrepdf[1, :r_MBR];
-                                          xgrid=xgrid)
+# iota : min(iota) s.t. Misrep-MBR(iota) >= FI-MBR(iota)
+cvm_misrep_iota = fv_iota # ModelPlots.get_cutoff_value(sfdf, :iota, :MBR, misrepdf[1, :r_MBR];
+                          #                xgrid=xgrid)
 # #########################################################
 
 # * Plots
-# # Firm Value
+# Firm Value
 # fv_fig = ModelPlots.rmp_fi_plotfun(:iota, [:firm_value], 
 #                                    deepcopy(sfdf), deepcopy(rfdf),
 #                                    interp_yvar=true,

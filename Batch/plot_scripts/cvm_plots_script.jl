@@ -17,7 +17,7 @@ module_path = string(main_path, "/", "Julia/modules/")
 modls = ["Batch", "ModelObj", "AnalyticFunctions", 
          "BondPrInterp", "EqFinDiff", "ModelPlots"]
 for modl in modls
-    include(string(joinpath(module_path, modl), "/", modl, ".jl"))
+    include(string(joinpath(module_path, modl), ".jl"))
 end
 
 

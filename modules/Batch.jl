@@ -361,12 +361,12 @@ function set_param_comb_df(bt)
     cols_dict = Dict([names(pcdf)[i] => Symbol(bt.bp._params_order[i]) 
                       for i in 1:size(names(pcdf), 1)])
     rename!(pcdf, cols_dict)
-    pcdf[!, :comb_num] = 1:size(pcdf, 1)
+    pcdf[!, :comb_num] .= 1:size(pcdf, 1)
 
     # Important: sort by :m
     sort!(pcdf, :m)
     # Count rows by :m
-    pcdf[!, :m_comb_num] = by(pcdf, :m, m_comb_num = :m => x -> 1:size(x, 1))[:, :m_comb_num]
+    pcdf[!, :m_comb_num] .= by(pcdf, :m, m_comb_num = :m => x -> 1:size(x, 1))[:, :m_comb_num]
 
     idcols = [:comb_num, :m, :m_comb_num]
     bt.bp.df = pcdf[:, vcat(idcols, [x for x in names(pcdf) if !(x in idcols)])]
@@ -988,12 +988,12 @@ end
 
 
 function save_eq_results(bt, res, df::DataFrame, eq_fd_cp_path_fname::String)
-    sol = sort!(vcat(df[bt.dfc.dfcols], res[bt.dfc.dfcols]), [:p])
+    sol = sort!(vcat(df[:, bt.dfc.dfcols], res[:, bt.dfc.dfcols]), [:p])
 
     # Identify solution
-    sol[:opt] = .&(abs.(sol[:abs_debt_diff] .- 
-                         minimum(sol[:abs_debt_diff])) .< 1e-4, 
-                        abs.(sol[:eq_deriv]) .< 1e-4)
+    sol[!, :opt] .= .&(abs.(sol[:, :abs_debt_diff] .- 
+                         minimum(sol[:, :abs_debt_diff])) .< 1e-4, 
+                        abs.(sol[:, :eq_deriv]) .< 1e-4)
     
     CSV.write(eq_fd_cp_path_fname, sol)
 end
@@ -1008,7 +1008,7 @@ function load_eq_results(bt, svm, dfn; use_all_eqdf::Bool=true)
             all_eqdf = CSV.read(string(bt.mi.comb_res_path, "/all_", dfn),
                             types=coltypes)
         end
-        
+
        # Compute candidate vb for each p value
         eqdf_final = Batch.eq_fd_processing(bt, svm, all_eqdf)
 
@@ -1018,12 +1018,12 @@ function load_eq_results(bt, svm, dfn; use_all_eqdf::Bool=true)
         # Save results
         # Batch.save_eq_results(bt, res, eqdf_final,
         #                      string(bt.mi.comb_res_path, "/", dfn))
-        sol = sort!(vcat(eqdf_final[bt.dfc.dfcols], res[bt.dfc.dfcols]), [:p])
+        sol = sort!(vcat(eqdf_final[:, bt.dfc.dfcols], res[:, bt.dfc.dfcols]), [:p])
 
         # Identify solution
-        sol[:opt] = .&(abs.(sol[:abs_debt_diff] .- 
-                            minimum(sol[:abs_debt_diff])) .< 1e-4, 
-                       abs.(sol[:eq_deriv]) .< 1e-4)
+        sol[!, :opt] .= .&(abs.(sol[:, :abs_debt_diff] .- 
+                            minimum(sol[:, :abs_debt_diff])) .< 1e-4, 
+                       abs.(sol[:, :eq_deriv]) .< 1e-4)
 
         # Drop duplicates
         unique!(sol, [:p])
@@ -1073,9 +1073,10 @@ function load_svm_opt_results(bt;
         #                       end
         #                       return Float64
         #                     end, cols)
-        optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), types=opt_k_struct_df_coltypes)
+        optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"),
+                         types=opt_k_struct_df_coltypes)
 
-        if !isnan(optDF[:c][1])
+        if !isnan(optDF[1, :c])
             opt_k_struct_found=true
         end
     end
@@ -1103,7 +1104,6 @@ function load_svm_opt_results(bt;
                                 save_optdf=save_optdf,
                                 optdf_name=optdf_name)
     end
-
     return optDF
 end
 
@@ -1293,9 +1293,9 @@ function debt_at_par_check_conds(svm, df, xvar, xmin, xmax; disp_option=false)
     # 2. At least 2 out of 5 (P, VB) pairs should be in the interval:
     #                       [.9 * p_min, 1.1 * p_max)]
     # 3. At least 2 out of 5 pairs should have precision <= 1e-2
-    cond1 = sum(df[:abs_debt_per_diff] .<= 2e-2) >= 5
-    cond2 = sum(.&(df[xvar] .>= xmin * .9, df[xvar] .<= xmax * 1.1)) >= 2
-    cond3 = sum(df[:abs_debt_per_diff] .<= 1e-2) >= 2
+    cond1 = sum(df[:, :abs_debt_per_diff] .<= 2e-2) >= 5
+    cond2 = sum(.&(df[:, xvar] .>= xmin * .9, df[:, xvar] .<= xmax * 1.1)) >= 2
+    cond3 = sum(df[:, :abs_debt_per_diff] .<= 1e-2) >= 2
     conds = cond1 & cond2 & cond3
 
     if disp_option
@@ -1311,17 +1311,17 @@ end
 
 function debt_at_par_diffs(svm, df, xvar; p=NaN, sort_vars=[])
     if xvar ==:p
-        aggP = [get_agg_p(svm, p=p) for p in df[:p]]
+        aggP = [get_agg_p(svm, p=p) for p in df[:, :p]]
     elseif !isnan(p)
         aggP = get_agg_p(svm, p=p)
     else
         println("Missing p value(s). Exiting...")
     end
 
-    df[:debt_diff] = df[:debt] .- aggP
-    df[:abs_debt_diff] = abs.(df[:debt_diff])
-    df[:debt_per_diff] = (df[:debt_diff]) ./ aggP
-    df[:abs_debt_per_diff] = abs.(df[:debt_per_diff])
+    df[!, :debt_diff] .= df[:, :debt] .- aggP
+    df[!, :abs_debt_diff] .= abs.(df[:, :debt_diff])
+    df[!, :debt_per_diff] .= (df[:, :debt_diff]) ./ aggP
+    df[!, :abs_debt_per_diff] .= abs.(df[:, :debt_per_diff])
 
     if isempty(sort_vars)
         return sort!(df, xvar)
@@ -1335,8 +1335,8 @@ function debt_at_par_new_df(svm, c, p, df, xvar, debt_vars=debt_vars)
     xgrid_new = (Array(df[xvar])[2:end] + Array(df[xvar])[1:end-1])./ 2.
     df_new = DataFrame(hcat(reverse(xgrid_new), 999. * (ones(length(xgrid_new), size(df, 2) - 1))),
                        vcat([xvar, :debt], debt_vars))
-    df_new[:debt] = fetch(@spawn [get_svm_debt_price(svm, vbl; c=c, p=p)
-                                  for vbl in df_new[xvar]])
+    df_new[!, :debt] .= fetch(@spawn [get_svm_debt_price(svm, vbl; c=c, p=p)
+                                  for vbl in df_new[:, xvar]])
     
     return sort!(vcat(df, df_new), :vb)
 end
@@ -1350,13 +1350,13 @@ function debt_at_par_main(svm, c, df, xvar, xgrid_ref;
     
     # Interpolate
     if xvar == :p
-        agg_p_vec = [get_agg_p(svm, p=p) for p in df[:p]]
-        diff_interp_fun = Dierckx.Spline1D(df[:p],
-                              (df[:debt] .- agg_p_vec) ./ agg_p_vec,
+        agg_p_vec = [get_agg_p(svm, p=p) for p in df[:, :p]]
+        diff_interp_fun = Dierckx.Spline1D(df[:, :p],
+                              (df[:, :debt] .- agg_p_vec) ./ agg_p_vec,
                                            k=3, bc="extrapolate")
     else
-        diff_interp_fun = Dierckx.Spline1D(df[:vb],
-                              (df[:debt] .- get_agg_p(svm, p=p)) ./ get_agg_p(svm, p=p),
+        diff_interp_fun = Dierckx.Spline1D(df[:, :vb],
+                              (df[:, :debt] .- get_agg_p(svm, p=p)) ./ get_agg_p(svm, p=p),
                                            k=3, bc="extrapolate")
     end
 
@@ -1368,7 +1368,7 @@ function debt_at_par_main(svm, c, df, xvar, xgrid_ref;
         println(string(xvar, " root: ", xroot))
     end
             
-    if sum(abs.(df[xvar] .- xroot) .< 1e-4) == 0
+    if sum(abs.(df[:, xvar] .- xroot) .< 1e-4) == 0
         if xvar == :p
             debt_root = get_svm_debt_price(svm, vbl; p=xroot)
         else
@@ -1412,9 +1412,9 @@ function svm_debt_at_par(svm, x_min, x_max, c; p=NaN, vbl=NaN,
                         vcat([xvar, :debt], debt_vars))
 
     if xvar == :p
-        df[:debt] = fetch(@spawn [get_svm_debt_price(svm, vbl; c=c, p=pval) for pval in df[:p]])
+        df[!, :debt] .= fetch(@spawn [get_svm_debt_price(svm, vbl; c=c, p=pval) for pval in df[:, :p]])
     else
-        df[:debt] = fetch(@spawn [get_svm_debt_price(svm, vblval; c=c, p=p) for vblval in df[:vb]])
+        df[!, :debt] .= fetch(@spawn [get_svm_debt_price(svm, vblval; c=c, p=p) for vblval in df[:, :vb]])
     end
 
     # Sort DataFrame
@@ -1431,10 +1431,10 @@ function svm_debt_at_par(svm, x_min, x_max, c; p=NaN, vbl=NaN,
     count = 0
     if disp_option
         println(string("Counter: ", count))
-        println("Unique ", xvar, " values: ", length(unique(df[xvar])))
+        println("Unique ", xvar, " values: ", length(unique(df[:, xvar])))
     end
 
-    while !conds & (length(unique(df[xvar])) < 20) & (count < 10)
+    while !conds & (length(unique(df[:, xvar])) < 20) & (count < 10)
         if disp_option
             println("While loop")
         end
@@ -1462,14 +1462,14 @@ function svm_debt_at_par(svm, x_min, x_max, c; p=NaN, vbl=NaN,
     if disp_option
         println("Debt at par: preparing results...")
     end
-    df[:c] = c
-    df[fixed_var] = fixed_var_value
-    df[:count] = count
-    df[:time] = time_ns() - start_tic
+    df[!, :c] .= c
+    df[!, fixed_var] .= fixed_var_value
+    df[!, :count] .= count
+    df[!, :time] .= time_ns() - start_tic
                                 
     cols = vcat([:c, fixed_var, xvar, :debt],
                 debt_vars, [:count, :time])
-    df = df[cols]
+    df = df[:, cols]
 
     if disp_option
         println("returning results...")
@@ -1484,21 +1484,21 @@ end
 # ** Batch Equity Finite Differences
 # include("_batch_core/_batch_eq_fd.jl")
 function df_slicer(df, p)
-   return df[abs.((df[:p] .- p)) .< 1e-4, :] 
+   return df[abs.((df[:, :p] .- p)) .< 1e-4, :] 
 end
 
 
 function abs_debt_diff_cond(df, p; tol=.05)
     # Slice DataFrame
-    return minimum(df_slicer(df, p)[:abs_debt_diff]) < tol
+    return minimum(df_slicer(df, p)[:, :abs_debt_diff]) < tol
 end
 
 
 function filter_debt_values(bt, svm, df; N1=50, N2=10)
-    pval = unique(df[:p])[1]
+    pval = unique(df[:, :p])[1]
     
-    debtf = Dierckx.Spline1D(df[:vb], df[:debt], k=3, bc="extrapolate")
-    vbgrid = range(minimum(df[:vb]), stop=maximum(df[:vb]), length=N1)
+    debtf = Dierckx.Spline1D(df[:, :vb], df[:, :debt], k=3, bc="extrapolate")
+    vbgrid = range(minimum(df[:, :vb]), stop=maximum(df[:, :vb]), length=N1)
     aggP = get_agg_p(svm, p=pval)
     debt_diff = debtf(vbgrid) .- aggP
     
@@ -1507,30 +1507,30 @@ function filter_debt_values(bt, svm, df; N1=50, N2=10)
     vbvals = vbgrid[pos]
     
     sdf = DataFrame(vb=vbvals, debt=debtf(vbvals))
-    sdf[:c] = unique(df[:c])[1]
-    sdf[:p] = unique(df[:p])[1]                        
+    sdf[!, :c] .= unique(df[:, :c])[1]
+    sdf[!, :p] .= unique(df[:, :p])[1]                        
     sdf = debt_at_par_diffs(svm, sdf, :vb, p=pval)
     
-    return sdf[vcat([:c, :p, :vb, :debt], bt.dfc.debt_vars)]
+    return sdf[:, vcat([:c, :p, :vb, :debt], bt.dfc.debt_vars)]
 end
 
 
 function filter_batch_I_df(bt, svm, df; tol=.05, N1=50, N2=10)
     LL = fetch(@spawn [filter_debt_values(bt, svm, df_slicer(df, p); N1=N1, N2=N2) 
-                       for p in unique(df[:p])])
+                       for p in unique(df[:, :p])])
     sdf=vcat(LL...)
     
     # Get Filtered pgrid
-    pgrid =  [p for p in unique(sdf[:p]) if 
-              (minimum(abs.(df_slicer(sdf, p)[:debt_diff])) < tol)] 
+    pgrid =  [p for p in unique(sdf[:, :p]) if 
+              (minimum(abs.(df_slicer(sdf, p)[:, :debt_diff])) < tol)] 
     while size(pgrid, 1) < 5
         tol = 1.25 * tol
-        pgrid =  [p for p in unique(sdf[:p]) if 
-                  (minimum(abs.(df_slicer(sdf, p)[:debt_diff])) < tol)] 
+        pgrid =  [p for p in unique(sdf[:, :p]) if 
+                  (minimum(abs.(df_slicer(sdf, p)[:, :debt_diff])) < tol)] 
     end
                                                         
     # Return Filtered DataFrame
-    return df[findall(in(pgrid), df[:p]), :]
+    return df[findall(in(pgrid), df[:, :p]), :]
 end
 
 
@@ -1553,7 +1553,7 @@ function eq_fd_method(bt, svm, df; mu_b=NaN, c=NaN)
     eqdf_all = debt_at_par_diffs(svm, tmp, :p; sort_vars=[:p, :vb])
 
     # Rearrange Columns
-    return eqdf_all[bt.dfc.dfcols]
+    return eqdf_all[:, bt.dfc.dfcols]
 end
 
 
@@ -1561,7 +1561,7 @@ function interp_values(res, df, xvar::Symbol, interp_cols::Array{Symbol,1};
                        k::Int64=3, bc::String="extrapolate")
     for col in interp_cols
         ffun = Dierckx.Spline1D(df[:, xvar], df[:, col]; k=k, bc=bc)
-        res[!, col] = ffun(res[:, xvar])
+        res[!, col] .= ffun(res[:, xvar])
     end 
     return res
 end
@@ -1569,16 +1569,16 @@ end
 
 function non_interp_values(svm, df)
     # Debt Values
-    df[:abs_debt_diff] = abs.(df[:debt_diff])
-    df[:abs_debt_per_diff] = abs.(df[:debt_per_diff])
+    df[!, :abs_debt_diff] .= abs.(df[:, :debt_diff])
+    df[!, :abs_debt_per_diff] .= abs.(df[:, :debt_per_diff])
 
     # Equity
-    df[:eq_negative] = (df[:eq_min_val] .< -.005)
+    df[!, :eq_negative] .= (df[:, :eq_min_val] .< -.005)
 
     # Share Values
-    df[:firm_value] = df[:debt] .+ df[:equity]
-    df[:leverage] = (df[:debt]./df[:firm_value]) .* 100
-    df[:MBR] = (df[:equity]./(svm.pm.V0 .- df[:debt]) .- 1) .* 100
+    df[!, :firm_value] .= df[:, :debt] .+ df[:, :equity]
+    df[!, :leverage] .= (df[:, :debt]./df[:, :firm_value]) .* 100
+    df[!, :MBR] .= (df[:, :equity]./(svm.pm.V0 .- df[:, :debt]) .- 1) .* 100
 
     return df
 end
@@ -1594,14 +1594,13 @@ function eq_deriv_root_search(svm, df, p; mu_b=NaN, c=NaN, N=10^5)
     end
     
     # Create DataFrame
-    res = DataFrame()
-    res[:p] = p
+    res = DataFrame(:p => p)
     
     # Filter DataFrame
-    fdf = df[abs.(df[:p] .- p) .< 1e-4, :]
+    fdf = df[abs.(df[:, :p] .- p) .< 1e-4, :]
     
     # Interpolate Values
-    eq_deriv_fun = Dierckx.Spline1D(fdf[:vb], fdf[:eq_deriv], k=3, bc="extrapolate")
+    eq_deriv_fun = Dierckx.Spline1D(fdf[:, :vb], fdf[:, :eq_deriv], k=3, bc="extrapolate")
     
     # Compute optimal VB:
     vbroots = roots(eq_deriv_fun; maxn=8)
@@ -1609,16 +1608,16 @@ function eq_deriv_root_search(svm, df, p; mu_b=NaN, c=NaN, N=10^5)
         # debt_interp = Dierckx.Spline1D(fdf[:vb], fdf[:debt], k=3, bc="extrapolate")
         # abs_debt_diff = abs.(debt_interp(vbroots) .- get_agg_p(svm, p=p))
         # res[:vb] = vbroots[argmin(abs_debt_diff)]
-        eq_min_val_interp = Dierckx.Spline1D(fdf[:vb], fdf[:eq_min_val], k=3, bc="extrapolate")
+        eq_min_val_interp = Dierckx.Spline1D(fdf[:, :vb], fdf[:, :eq_min_val], k=3, bc="extrapolate")
         abs_eq_min_val = abs.(eq_min_val_interp(vbroots))
-        res[:vb] = vbroots[argmin(abs_eq_min_val)]
+        res[!, :vb] .= vbroots[argmin(abs_eq_min_val)]
     else
-        ref_vbgrid = range(minimum(fdf[:vb]), stop=maximum(fdf[:vb]), length=N)
-        res[:vb] = ref_vbgrid[argmin(abs.(eq_deriv_fun(ref_vbgrid)))]
+        ref_vbgrid = range(minimum(fdf[:, :vb]), stop=maximum(fdf[:, :vb]), length=N)
+        res[!, :vb] .= ref_vbgrid[argmin(abs.(eq_deriv_fun(ref_vbgrid)))]
     end
     
     # Equity Values
-    res[:eq_deriv] = eq_deriv_fun(res[:vb])
+    res[!, :eq_deriv] .= eq_deriv_fun(res[:, :vb])
 
     # Interpolate Functions
     interp_cols = vcat([:debt, :equity],
@@ -1652,29 +1651,27 @@ function eq_fd_processing(bt, svm, df; mu_b=NaN, c=NaN, N=10^5)
     
     params_dict = Dict()
     for par in vcat(bt.dfc.main_params, [:mu_b, :m, :c], bt.dfc.fixed_params)
-        params_dict[par] = unique(df[par])[1]
+        params_dict[par] = unique(df[:, par])[1]
     end
 
     # Compute the Solutions for each pair (c, p)
     tmp = fetch(@spawn [eq_deriv_root_search(svm, df, p; mu_b=mu_b, c=c, N=N) 
-                        for p in unique(df[:p])])
+                        for p in unique(df[:, :p])])
 
     # Collect results
     eqfinal = hcat(vcat(tmp...), repeat(DataFrame(params_dict), outer=size(tmp, 1)))
 
     # Rearrange columns
-    return eqfinal[bt.dfc.dfcols]
+    return eqfinal[:, bt.dfc.dfcols]
 end
 
 
 function eq_fd_sol(bt, svm, df; N=10^5)
-    res=DataFrame()
-    
     # Find p for which |D - P| = 0:
-    ddiff = Dierckx.Spline1D(df[:p], df[:debt_diff], k=3, bc="extrapolate")
-    pgrid = range(minimum(df[:p]), stop=maximum(df[:p]), length=N)
-    res[:p] = pgrid[argmin(abs.(ddiff(pgrid)))]
-    res[:debt_diff] = ddiff(res[:p])
+    ddiff = Dierckx.Spline1D(df[:, :p], df[:, :debt_diff], k=3, bc="extrapolate")
+    pgrid = range(minimum(df[:, :p]), stop=maximum(df[:, :p]), length=N)
+    res = DataFrame(:p => pgrid[argmin(abs.(ddiff(pgrid)))])
+    res[!, :debt_diff] .= ddiff(res[:, :p])
     
     # Interpolate 
     interp_cols = vcat([:vb, :debt, :equity],
@@ -1687,10 +1684,10 @@ function eq_fd_sol(bt, svm, df; N=10^5)
     # Get Non-Variable Values    
     cols = vcat(bt.dfc.main_params, [:mu_b, :m, :c], bt.dfc.fixed_params)
     for col in cols
-        res[col] = df[1, col]
+        res[!, col] .= df[1, col]
     end
     
-    return res[bt.dfc.dfcols]
+    return res[:, bt.dfc.dfcols]
 end
 
 
@@ -1700,7 +1697,7 @@ end
 function diag_df(bt, i::Integer)
     combdf = DataFrame(bt.bp.df[i, :])
     
-    bt = Batch.set_par_dict(bt; comb_num=combdf[:comb_num][1], display_msgs=false)
+    bt = Batch.set_par_dict(bt; comb_num=combdf[1, :comb_num], display_msgs=false)
     bt = Batch.set_comb_res_paths(bt)
     
     combdf = hcat(combdf, DataFrame(folder_name = bt.mi.comb_res_dir,
@@ -1711,19 +1708,19 @@ function diag_df(bt, i::Integer)
                                     count = 0))
 
     # Count solutions:
-    if combdf[:folder_created][1]
+    if combdf[1, :folder_created]
         dfs_list = [x for x in readdir(bt.mi.comb_res_path) if 
                     occursin(bt.dfn.eq_fd_cp_fn_prefix, x)]
-        combdf[:count] = size(dfs_list, 1)
-        combdf[:batch_obj] = sum([occursin(Batch.batch_file_name, x) for 
+        combdf[!, :count] .= size(dfs_list, 1)
+        combdf[!, :batch_obj] .= sum([occursin(Batch.batch_file_name, x) for 
                                   x in readdir(bt.mi.comb_res_path)]) > 0
 
-        if combdf[:batch_obj][1]
+        if combdf[1, :batch_obj]
             batch_obj_file = string(bt.mi.comb_res_path, "/",
                                     Batch.batch_file_name, ".jld")
-            combdf[:modified] = string(Dates.unix2datetime(stat(batch_obj_file).mtime))
+            combdf[!, :modified] .= string(Dates.unix2datetime(stat(batch_obj_file).mtime))
         end
-        combdf[:bond_surfs] = sum([occursin("bond_surfaces", x) for 
+        combdf[!, :bond_surfs] .= sum([occursin("bond_surfaces", x) for 
                                    x in readdir(bt.mi.comb_res_path)]) > 0
     end
     
@@ -1739,7 +1736,7 @@ function diagnosis(bt)
     cols1 = [:comb_num, :m, :m_comb_num, :folder_created, :batch_obj,
              :modified, :bond_surfs, :count, :folder_name]
     cols2 = [x for x in names(combDFs[1]) if !(x in cols1)]
-    return sort!(vcat(combDFs...)[vcat(cols1, cols2)], [:m, :m_comb_num])
+    return sort!(vcat(combDFs...)[:, vcat(cols1, cols2)], [:m, :m_comb_num])
 end
 
 
@@ -1771,12 +1768,12 @@ end
 
 
 function p_interp_fun(svm, x::DataFrame, toldf::DataFrame; N::Integer=10^5, quietly::Bool=false)
-    c = unique(x[:c])[1]
-    pgrid = range(minimum(x[:p]), stop=maximum(x[:p]), length=N)
+    c = unique(x[:, :c])[1]
+    pgrid = range(minimum(x[:, :p]), stop=maximum(x[:, :p]), length=N)
 
     interpf = Dict()
     for col in [:eq_deriv, :vb, :eq_min_val, :debt, :equity]
-        interpf[col] = Dierckx.Spline1D(x[:p], x[col]; k=3, bc="extrapolate")
+        interpf[col] = Dierckx.Spline1D(x[:, :p], x[:, col]; k=3, bc="extrapolate")
     end
     
     # Filter by (i) Debt Principal Difference,
@@ -1817,23 +1814,40 @@ function p_interp_fun(svm, x::DataFrame, toldf::DataFrame; N::Integer=10^5, quie
     aggP = get_agg_p(svm, p=optp)
     opt_eq = interpf[:equity](optp)
     opt_firm_val = opt_debt + opt_eq
-    return DataFrame(c = c,
-                     p = optp,
-                     opt_vb = interpf[:vb](optp),
-                     cvml_vb = get_cvm_vb(svm, svm.pm.sigmal; 
+    # return DataFrame(c = c,
+    #                  p = optp,
+    #                  opt_vb = interpf[:vb](optp),
+    #                  cvml_vb = get_cvm_vb(svm, svm.pm.sigmal; 
+    #                                       mu_b=svm.mu_b, c=c, p=optp),
+    #                  cvmh_vb = get_cvm_vb(svm, svm.pm.sigmah; 
+    #                                       mu_b=svm.mu_b, c=c, p=optp),
+    #                  debt_diff = opt_debt - aggP,
+    #                  debt_per_diff = (opt_debt - aggP) / aggP,
+    #                  eq_deriv = interpf[:eq_deriv](optp),
+    #                  eq_min_val = interpf[:eq_min_val](optp),
+    #                  debt = opt_debt,
+    #                  equity = opt_eq,
+    #                  firm_value = opt_firm_val,
+    #                  leverage = get_leverage(opt_debt, opt_eq),
+    #                  MBR = get_mbr(svm.pm.V0, opt_debt, opt_eq),               
+    #                  p_filter_success = p_filter_success)
+    return DataFrame(:c => c,
+                     :p => optp,
+                     :opt_vb => interpf[:vb](optp),
+                     :cvml_vb => get_cvm_vb(svm, svm.pm.sigmal; 
                                           mu_b=svm.mu_b, c=c, p=optp),
-                     cvmh_vb = get_cvm_vb(svm, svm.pm.sigmah; 
+                     :cvmh_vb => get_cvm_vb(svm, svm.pm.sigmah; 
                                           mu_b=svm.mu_b, c=c, p=optp),
-                     debt_diff = opt_debt - aggP,
-                     debt_per_diff = (opt_debt - aggP) / aggP,
-                     eq_deriv = interpf[:eq_deriv](optp),
-                     eq_min_val = interpf[:eq_min_val](optp),
-                     debt = opt_debt,
-                     equity = opt_eq,
-                     firm_value = opt_firm_val,
-                     leverage = get_leverage(opt_debt, opt_eq),
-                     MBR = get_mbr(svm.pm.V0, opt_debt, opt_eq),               
-                     p_filter_success = p_filter_success)
+                     :debt_diff => opt_debt - aggP,
+                     :debt_per_diff => (opt_debt - aggP) / aggP,
+                     :eq_deriv => interpf[:eq_deriv](optp),
+                     :eq_min_val => interpf[:eq_min_val](optp),
+                     :debt => opt_debt,
+                     :equity => opt_eq,
+                     :firm_value => opt_firm_val,
+                     :leverage => get_leverage(opt_debt, opt_eq),
+                     :MBR => get_mbr(svm.pm.V0, opt_debt, opt_eq),               
+                     :p_filter_success => p_filter_success)
     # leverage = (opt_debt / opt_firm_val) * 100,
     # ROE = (opt_eq / (svm.pm.V0 - opt_debt) - 1) * 100,
     
@@ -1862,22 +1876,22 @@ function process_combination_results(bt, svm;
 
     # For each coupon value, interpolate and extract results
     LL = @time fetch(@spawn [p_interp_fun(svm, 
-                             eqdf_final[abs.(eqdf_final[:c] .- c).<1e-4, :], 
-                             toldf) for c in unique(eqdf_final[:c])])
+                             eqdf_final[abs.(eqdf_final[:, :c] .- c).<1e-4, :], 
+                             toldf) for c in unique(eqdf_final[:, :c])])
     soldf = sort(vcat(LL...), [:c])
     
     # Add Columns with Parameter Values
     cols = [x for x in vcat(bt.dfc.main_params, bt.dfc.fixed_params, [:mu_b, :m])
             if x !=:delta]
     for col in cols
-        soldf[col] = bt.mi._svm_dict[col]
+        soldf[!, col] .= bt.mi._svm_dict[col]
     end
-    soldf[:delta] = soldf[:gross_delta] .- soldf[:iota]
+    soldf[!, :delta] .= soldf[:, :gross_delta] .- soldf[:, :iota]
     
     # Reoder columns
     cols1 = vcat(bt.dfc.main_params, [x for x in bt.dfc.k_struct_params if x !=:vb])
     cols2 = [x for x in names(soldf) if .&(!(x in cols1), !(x in bt.dfc.fixed_params))]
-    soldf = unique!(soldf[vcat(cols1, cols2, bt.dfc.fixed_params)])
+    soldf = unique!(soldf[:, vcat(cols1, cols2, bt.dfc.fixed_params)])
 
     # Save DataFrame
     if save_df
@@ -1962,9 +1976,9 @@ function filter_k_struct(df; interp_polyOrder::Integer=3,
 
     # Interpolate and Filter p, VB, Debt, Equity and Firm Value
     sgF = Dict()
-    sgF[:cgrid] = range(minimum(df[:c]), stop=maximum(df[:c]), length=10^4)
+    sgF[:cgrid] = range(minimum(df[:, :c]), stop=maximum(df[:, :c]), length=10^4)
     for x in interp_vars 
-        tmp = Dierckx.Spline1D(df[:c], df[x], k=interp_polyOrder, bc="extrapolate")
+        tmp = Dierckx.Spline1D(df[:, :c], df[:, x], k=interp_polyOrder, bc="extrapolate")
         sgF[x] = savitsky_golay(tmp(sgF[:cgrid]),  filter_windowSize, filter_polyOrder)
     end
     # sgF[:firm_value] = sgF[:debt] .+ sgF[:equity]
@@ -2002,7 +2016,7 @@ function optimal_capital_struct(bt, svm;
     end
 
     # Discard failed results
-    df = df[df[:p_filter_success].==true, :]
+    df = df[df[:, :p_filter_success].==true, :]
     
     # Interpolate and Filter Optimal Capital Structure
     sgF = filter_k_struct(df; interp_polyOrder=interp_polyOrder,
@@ -2023,21 +2037,21 @@ function optimal_capital_struct(bt, svm;
                  p=sgF[:p][cpos])
     
     # Add Parameter Values
-    eqDF[:cvml_vb] = sgF[:cvml_vb][cpos]
-    eqDF[:cvmh_vb] = sgF[:cvmh_vb][cpos]
-    eqDF[:sg_debt] = sgF[:debt][cpos]
-    eqDF[:sg_equity] = sgF[:equity][cpos]
+    eqDF[!, :cvml_vb] .= sgF[:cvml_vb][cpos]
+    eqDF[!, :cvmh_vb] .= sgF[:cvmh_vb][cpos]
+    eqDF[!, :sg_debt] .= sgF[:debt][cpos]
+    eqDF[!, :sg_equity] .= sgF[:equity][cpos]
     
     # Add Debt Functions
     eqDF = debt_at_par_diffs(svm, eqDF, :p)
 
     # Add Column with firm_obj_fun
-    eqDF[:obj_fun] = String(firm_obj_fun)
+    eqDF[!, :obj_fun] .= String(firm_obj_fun)
     
     # Reoder columns
     cols = opt_k_struct_cols(bt)
 
-    return eqDF[cols]
+    return eqDF[:, cols]
 end
 
 function save_combination_opt_k_struct(bt, eqDF::DataFrame;
@@ -2052,14 +2066,14 @@ function save_combination_opt_k_struct(bt, eqDF::DataFrame;
             seqDF = CSV.read(string(bt.mi.comb_res_path, "/", dfname, ".csv"),
                              types=coltypes)
 
-            cond = .&(vcat([seqDF[:obj_fun] .== eqDF[:obj_fun]], 
-                           [(abs.(seqDF[col] .- eqDF[col]) .< 1e-6) for col in idcols if col != :obj_fun])...)
+            cond = .&(vcat([seqDF[:, :obj_fun] .== eqDF[:, :obj_fun]], 
+                           [(abs.(seqDF[:, col] .- eqDF[:, col]) .< 1e-6) for col in idcols if col != :obj_fun])...)
             if sum(cond) == 0
                 println("No match found. Appending row...")
                 seqDF = vcat(seqDF, eqDF)
             elseif sum(cond) == 1
                 println("Match found! Replacing row...")
-                seqDF[cond, :] = eqDF
+                seqDF[cond, :] .= eqDF
             else 
                 println("Multiple matches found. Refine ID columns. Returning...")
                 return
@@ -2111,11 +2125,11 @@ function compile_optimal_cap_struct(bt, svm;
 
     # Add combination IDs
     combdf = get_batch_comb_num(bt)
-    eqDF[:comb_num] =combdf[1, :comb_num]
-    eqDF[:m_comb_num] =combdf[1, :comb_num]       
+    eqDF[!, :comb_num] .= combdf[1, :comb_num]
+    eqDF[!, :m_comb_num] .= combdf[1, :comb_num]       
     id_cols = [:comb_num, :m, :m_comb_num]
     cols_order = vcat(id_cols, [x for x in names(eqDF) if !(x in id_cols)])
-    eqDF = eqDF[cols_order]
+    eqDF = eqDF[:, cols_order]
 
     if replace_optdf
         CSV.write(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), eqDF)
@@ -2148,7 +2162,7 @@ function get_opt_results(bt;
     bt, svm = get_bt_svm(;comb_num=comb_num,
                          m=m, m_comb_num=m_comb_num,
                          display_msgs=display_msgs)
-
+    
     try
         return compile_optimal_cap_struct(bt, svm;
                                           firm_obj_fun=firm_obj_fun,
@@ -2168,28 +2182,29 @@ function get_opt_results(bt;
         # return eqDF[vcat([:comb_num], [x for x in names(eqDF) if x !=:comb_num])]
     catch
         cols = opt_k_struct_cols(bt)
-        eqDF = DataFrame()
+        eqDict = Dict()
         for col in cols
             if string(col) in keys(bt.mi._svm_dict)
-               eqDF[col] = bt.mi._svm_dict[string(col)]
+               eqDict[col] = bt.mi._svm_dict[:, string(col)]
             elseif col != :eq_negative
-               eqDF[col] = NaN
+               eqDict[col] = NaN
             else
-               eqDF[col] = true
+               eqDict[col] = true
             end
         end
+        eqDF = DataFrame(eqDict)
         # eqDF = hcat(get_batch_comb_num(bt)[[:comb_num, :m_comb_num]], eqDF)
         # id_cols = [:comb_num, :m, :m_comb_num]
         # cols_order = vcat(id_cols, [x for x in names(eqDF) if !(x in id_cols)])
         # return eqDF[cols_order]
         # Add combination IDs
-        eqDF[:comb_num] = comb_num
+        eqDF[!, :comb_num] .= comb_num
         combdf = get_batch_comb_num(bt)
-        optDF[:comb_num] =combdf[1, :comb_num]
-        optDF[:m_comb_num] =combdf[1, :comb_num]       
+        optDF[!, :comb_num] .= combdf[1, :comb_num]
+        optDF[!, :m_comb_num] .= combdf[1, :comb_num]       
         id_cols = [:comb_num, :m, :m_comb_num]
         cols_order = vcat(id_cols, [x for x in names(eqDF) if !(x in id_cols)])
-        return eqDF[cols_order]
+        return eqDF[:, cols_order]
     end
 end
 
@@ -2213,9 +2228,9 @@ function compile_svm_opt_results(bt; m::Float64=NaN,
                                  opt_k_struct_df_name::String=opt_k_struct_df_name)
 
     if !isnan(m)
-        comb_nums = bt.bp.df[bt.bp.df[:m] .== m, :comb_num]
+        comb_nums = bt.bp.df[bt.bp.df[:, :m] .== m, :comb_num]
     else
-        comb_nums = bt.bp.df[:comb_num]
+        comb_nums = bt.bp.df[:, :comb_num]
     end
     #    comb_nums = range(1, stop=size(hcat(bt._params_combs...)', 1))
     if recompute_comb_opt_res
@@ -2253,7 +2268,7 @@ function compile_svm_opt_results(bt; m::Float64=NaN,
     optDF = vcat(optDF_LL...)
 
     # Filter
-    optDF = optDF[optDF[:obj_fun] .== String(firm_obj_fun), :]
+    optDF = optDF[optDF[:, :obj_fun] .== String(firm_obj_fun), :]
 
     if save_results
         println("Saving compiled results...")
@@ -2370,32 +2385,34 @@ function get_cvm_c_debt_at_par(bt, cvm, c::Float64;
     pOpt = get_p_debt_at_par(cvm; mu_b=mu_b, m=m, c=c, step=step, N1=N1, N2=N2)
 
     # Store Results ##############################################
-    df = DataFrame()
     
     # Parameters
     varlist = [var for var in vcat(bt.dfc.main_params, bt.dfc.fixed_params) if var != :delta]
+    tmp = Dict()
     for var in varlist
-        df[var] = bt.mi._svm_dict[var]
+        tmp[var] = bt.mi._svm_dict[var]
     end
-    df[!, :delta] = df[:, :gross_delta] - df[:, :iota]
+    df = DataFrame(tmp)
+    
+    df[!, :delta] .= df[:, :gross_delta] - df[:, :iota]
 
-    df[!, :mu_b] = mu_b
-    df[!, :m] = m
-    df[!, :c] = c
-    df[!, :p] = pOpt
+    df[!, :mu_b] .= mu_b
+    df[!, :m] .= m
+    df[!, :c] .= c
+    df[!, :p] .= pOpt
     
     # Default Barrier
     vbl = get_cvm_vb(cvm, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
-    df[!, :vb] = vbl
+    df[!, :vb] .= vbl
     
     # Debt
-    df[!, :debt] = get_cvm_debt_price(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)  
+    df[!, :debt] .= get_cvm_debt_price(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)  
     df = debt_at_par_diffs(cvm, df, :p)
     
     # Equity
-    df[!, :eq_vb] = get_cvm_eq(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
-    df[!, :eq_min_val] = df[1, :eq_vb] #[1]
-    df[!, :equity] = get_cvm_eq(cvm, cvm.pm.V0, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
+    df[!, :eq_vb] .= get_cvm_eq(cvm, vbl, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
+    df[!, :eq_min_val] .= df[1, :eq_vb] #[1]
+    df[!, :equity] .= get_cvm_eq(cvm, cvm.pm.V0, cvm.pm.sigmal; mu_b=mu_b, c=c, p=pOpt)
                 
     # Firm Value, Leverage & MBR
     df = non_interp_values(cvm, df)
@@ -2451,75 +2468,78 @@ function optimal_cvm_capital_struct(bt, cvm;
                           interp_vars=[:p, :vb, :debt, :equity])
 
     # Compute Optimal Capital Structure
-    sgF[!, :firm_value] = sgF[:debt] .+ sgF[:equity]
-    sgF[!, :MBR] = get_mbr(get_param(cvm, :V0), sgF[:debt], sgF[:equity])
-    
+    sgF[:firm_value] = sgF[:debt] .+ sgF[:equity]
+    sgF[:MBR] = get_mbr(get_param(cvm, :V0), sgF[:debt], sgF[:equity])
+
+
     # Compute Optimal Capital Structure
     cpos = minimum(findlocalmaxima(sgF[firm_obj_fun]))
-    
     optDF = DataFrame()
 
+    optDict = Dict()
     # Parameters ######################
     for var in vcat(bt.dfc.main_params, bt.dfc.fixed_params, [:mu_b, :m])
-        optDF[var] = df[var][1]
+        optDict[var] = df[1, var]
     end
     # #################################
+
     
     #  Capital Struct #################
-    optDF[!, :c] = sgF[:cgrid][cpos]
-    optDF[!, :p] = sgF[:p][cpos]
-    optDF[!, :vb] = sgF[:vb][cpos]
+    optDict[:c] = sgF[:cgrid][cpos]
+    optDict[:p] = sgF[:p][cpos]
+    optDict[:vb] = sgF[:vb][cpos]
     # #################################
     
     # Debt ###########################
-    optDF[!, :sg_debt] = sgF[:debt][cpos]
-    optDF[!, :debt] = get_cvm_debt_price(cvm, optDF[1, :vb], #[1], 
-                                     optDF[1, :sigmal]; #[1]; 
-                                     mu_b=optDF[1, :mu_b]. #[1], 
-                                     c=optDF[1, :c], # [1], 
-                                     p=optDF[1, :p]) # [1])
+    optDict[:sg_debt] = sgF[:debt][cpos]
+
+    optDict[:debt] = get_cvm_debt_price(cvm, optDict[:vb], #[1], 
+                                        optDict[:sigmal]; #[1]; 
+                                        mu_b=optDict[:mu_b], #[1], 
+                                        c=optDict[:c], # [1], 
+                                        p=optDict[:p]) # [1])
+    optDF = DataFrame(optDict)
     optDF = debt_at_par_diffs(cvm, optDF, :p)
     # #################################
     
     # Equity #########################
-    optDF[!, :eq_vb] = get_cvm_eq(cvm, 
+    optDF[!, :eq_vb] .= get_cvm_eq(cvm, 
                                   optDF[1, :vb], #[1], 
                                   optDF[1, :sigmal]; #[1]; 
                                   mu_b=optDF[1, :mu_b], #[1], 
                                   c=optDF[1, :c], #[1], 
                                   p=optDF[1, :p]) #[1])
-    optDF[!, :eq_min_val] = optDF[1, :eq_vb][1]
-    optDF[!, :sg_equity] = sgF[:equity][cpos]
-    optDF[!, :equity] = get_cvm_eq(cvm, 
+    optDF[!, :eq_min_val] .= optDF[1, :eq_vb][1]
+    optDF[!, :sg_equity] .= sgF[:equity][cpos]
+    optDF[!, :equity] .= get_cvm_eq(cvm, 
                                    optDF[1, :V0], #[1], 
                                    optDF[1, :sigmal]; #[1]; 
                                    mu_b=optDF[1, :mu_b], #[1], 
                                    c=optDF[1, :c], #[1], 
                                    p=optDF[1, :p]) #[1])
     # #################################
-    
     optDF = non_interp_values(cvm, optDF)
     
-    
     # CVM NaN columns
-    optDF[!, :cvml_vb] = NaN
-    optDF[!, :cvmh_vb] = NaN
-    optDF[!, :eq_deriv] = NaN
-    optDF[!, :eq_min_val] = NaN
-    optDF[!, :eq_deriv_min_val] = NaN
+    optDF[!, :cvml_vb] .= NaN
+    optDF[!, :cvmh_vb] .= NaN
+    optDF[!, :eq_deriv] .= NaN
+    optDF[!, :eq_min_val] .= NaN
+    optDF[!, :eq_deriv_min_val] .= NaN
 
-    optDF[!, :eq_negative] = false
+    optDF[!, :eq_negative] .= false
      
     # Add Column with firm_obj_fun
-    optDF[!, :obj_fun] = String(firm_obj_fun)
+    optDF[!, :obj_fun] .= String(firm_obj_fun)
 
     # Add combination IDs
     combdf = get_batch_comb_num(bt)
-    optDF[!, :comb_num] =combdf[1, :comb_num]
-    optDF[!, :m_comb_num] =combdf[1, :comb_num]       
+    optDF[!, :comb_num] .= combdf[1, :comb_num]
+    optDF[!, :m_comb_num] .= combdf[1, :comb_num]       
     id_cols = [:comb_num, :m, :m_comb_num]
     cols_order = vcat(id_cols, [x for x in opt_k_struct_cols(bt) if !(x in id_cols)])
-    optDF = optDF[cols_order]
+    optDF = optDF[:, cols_order]
+
 
     if replace_optdf
         CSV.write(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), optDF)
@@ -2562,7 +2582,6 @@ function get_cvm_opt_results(; comb_num::Integer=0,
                          m=m, m_comb_num=m_comb_num,
                          display_msgs=display_msgs)
 
-    
     return optimal_cvm_capital_struct(bt, cvm;
                                       firm_obj_fun=firm_obj_fun,
                                       dfname=dfname,
@@ -2590,14 +2609,14 @@ function compile_cvm_opt_results(; m::Float64=NaN,
         comb_nums = bt.bp.df[:, :comb_num]
     end
 
-    optDFs = @time fetch(@spawn [get_cvm_opt_results(; comb_num=comb,
-                                                     firm_obj_fun=firm_obj_fun,
-                                                     display_msgs=display_msgs,
-                                                     dfname=soldf_name,
-                                                     replace_optdf=replace_optdf,
-                                                     save_optdf=save_optdf,
-                                                     optdf_name=optdf_name)
-                                 for comb in comb_nums])
+    optDFs = fetch(@spawn [get_cvm_opt_results(; comb_num=comb,
+                                               firm_obj_fun=firm_obj_fun,
+                                               display_msgs=display_msgs,
+                                               dfname=dfname,
+                                               replace_optdf=replace_optdf,
+                                               save_optdf=save_optdf,
+                                               optdf_name=optdf_name)
+                           for comb in comb_nums])
 
     cvmOptDF = sort!(vcat(optDFs...), [:m, :m_comb_num])
    
