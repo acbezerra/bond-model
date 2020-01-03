@@ -1,0 +1,192 @@
+
+mutable struct TypeSpecificParams
+    end
+
+
+# ** Joint Structs
+# include("_joint_objects/_joint_structs.jl")
+# RMP-Contingent Firm Type
+mutable struct JointKStruct
+    mu_s::Float64
+    mu_b::Float64
+    m::Float64
+    c::Float64
+    p::Float64
+end
+
+
+# mutable struct JointFirms
+#     st::FirmType
+#     rt::FirmType
+#     mtp::MarketTypeDist
+#     jks
+#     tcp::TypesCommonParams
+#     cvmdf::DataFrame
+#     svmdf::DataFrame
+# end
+
+
+# #############################################################
+
+# mutable struct JointEqParams
+#     # Measure of Bonds
+#     mu_s::Float64
+    
+#     # Transaction Costs
+#     kep::Float64
+#     kotc::Float64
+
+#     # Safe Firm Params
+#     sfp::FirmSpecificParams
+
+#     # Risky Firm Params
+#     rfp::FirmSpecificParams
+
+#     # Firm Common Params
+#     ## fcp::TypesCommonParams
+# end
+
+# * Constructors
+# ** Joint Constructor
+# include("_joint_objects/_joint_constructors.jl")
+function joint_firm_constructor(sf::Firm, rf::Firm;
+                                sf_comb_num::Int64=0,
+                                rf_comb_num::Int64=0,
+                                # jks::JointKStruct=JointKStruct(fill(NaN, 10)...),
+                                jks=JointKStruct(fill(NaN, 10)...),
+                                m::Float64=NaN,
+                                firm_obj_fun::Symbol=:firm_value,
+                                load_results_dfs::Bool=false,
+                                cvmdf::DataFrame=DataFrame(),
+                                svmdf::DataFrame=DataFrame(),                               
+                                opt_k_struct_df_name::String=opt_k_struct_df_name,
+                                recompute_svm::Bool=false)
+
+    # Form Batch Objects ###################################
+    sf_bt = BatchObj(; model=sf.model)
+    rf_bt = BatchObj(; model=rf.model)
+    if sf_comb_num > 0
+        sf_bt = set_par_dict(sf_bt; comb_num=sf_comb_num)
+    end
+    if rf_comb_num > 0
+        rf_bt = set_par_dict(rf_bt; comb_num=rf_comb_num)
+    end
+    # ######################################################
+    
+    if .&(isnan(m), !isnan(jks.m))
+        m = jks.m
+    end
+
+    if load_results_dfs
+        #cvm_bt = BatchObj(; model="cvm")
+        svm_bt = BatchObj(; model="svm")
+
+        cvmdf = load_cvm_opt_results_df(; m=m, firm_obj_fun=firm_obj_fun)
+        svmdf = load_svm_opt_results_df(svm_bt; m=m,
+                                        firm_obj_fun=firm_obj_fun,
+                                        opt_k_struct_df_name=opt_k_struct_df_name,
+                                        recompute=recompute_svm)
+    end
+
+    # Set Optimal Capital Structure ########################
+    df = (sf.model == "cvm") ? cvmdf : svmdf
+    if .&(sf_comb_num > 0, !isempty(df))
+        sf = set_opt_k_struct(sf, df)
+    end
+    
+    df = (rf.model == "cvm") ? cvmdf : svmdf
+    if .&(rf_comb_num > 0, !isempty(df))
+        rf = set_opt_k_struct(rf, df)
+    end
+    # #####################################################
+    
+
+    jf = JointFirms(jks, sf, rf, sf_bt, rf_bt, cvmdf, svmdf)
+    #jf = JointFirms(jks, sf, rf, cvm_bt, svm_bt, cvmdf, svmdf)
+end
+
+
+# ** Joint Types
+function joint_firms_constructor()
+
+    # Measure of Firms and Standardized Bond
+    ep_jks = store_ep_params(jep.mu_s;
+                             ep_jks=ep_jks,
+                             ep_m=ep_m,
+                             ep_c=ep_c,
+                             ep_p=ep_p)
+
+    # Check for missing parameters
+    if any([isnan(getfield(ep_jks, x)) for x in [:mu_s, :m, :c, :p]])
+        println("Missing Electronic Platform parameters")
+        return
+    end
+
+    # Adjust parameter dictionaries
+    for var in [:alpha, :pi, :r, :gross_delta, :xi] #, :sigmal]
+        sf_bt.mi._svm_dict[var] = getfield(jep.fcp, var)
+        rf_bt.mi._svm_dict[var] = getfield(jep.fcp, var)
+    end
+    sf_bt.mi._svm_dict[:sigmal] = jep.sfp.sigmal
+    rf_bt.mi._svm_dict[:sigmal] = jep.rfp.sigmal   
+
+    # Form EP Safe Firm
+    ep_sf_comb_num = get_batch_comb_num(sf_bt;
+                                        iota=jep.sfp.iota,
+                                        kappa=jep.kep,
+                                        lambda=jep.sfp.lambda,
+                                        sigmah=jep.sfp.sigmah)[1, :comb_num]
+    _, ep_sf_svm = get_bt_mobj(;model=sf_bt.model, comb_num=ep_sf_comb_num)
+
+    # Form EP Risky Firm
+    ep_rf_comb_num = get_batch_comb_num(rf_bt;
+                                        iota=jep.rfp.iota,
+                                        kappa=jep.kep,
+                                        lambda=jep.rfp.lambda,
+                                        sigmah=jep.rfp.sigmah)[1, :comb_num]
+    _, ep_rf_svm = get_bt_mobj(;model=rf_bt.model, comb_num=ep_rf_comb_num)
+
+
+
+    # Joint Firm Constructor ##########################################
+    ep_jf = joint_firm_constructor(ep_sf_svm, ep_rf_svm;
+                                   jks=ep_jks,
+                                   load_results_dfs=false)
+    # #################################################################
+
+
+
+end
+
+function adjust_pricing_parameters(sf, rf, jks,
+                                   mu_s::Float64, Vt::Float64, vt::Float64)
+    # Capital Structure
+    # for fn in fieldnames(JointKStruct)
+    #     if isnan(getfield(jks, fn))
+    #         setfield!(jks, fn, getfield(jf.jks, fn))
+    #     end
+    # end
+
+    # Measure of Safe Firms
+    if isnan(mu_s)
+        mu_s = jks.mu_s
+    elseif mu_s < 0.
+        println("Setting mu_s to zero!")
+        mu_s = 0.0
+    elseif mu_s > 1.
+        println("Setting mu_s to 1.!")
+        mu_s = 1.
+    end
+    
+
+    # Set Asset Value
+    if .&(isnan(Vt), isnan(vt))
+        Vt = get_param(sf, :V0)
+        vt = log(Vt/jks.vbl)
+    elseif isnan(vt)
+        vt = log(Vt/jks.vbl)
+    end
+    
+    return jks, mu_s, vt
+end
+

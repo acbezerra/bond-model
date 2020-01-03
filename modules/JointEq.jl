@@ -9,7 +9,7 @@ push!(LOAD_PATH, module_path)
 #     end
 # end
 
-include("FullInfoEq.jl")
+# include("FullInfoEq.jl")
 
 module JointEq 
 
@@ -47,10 +47,7 @@ using EqFinDiff: get_cvm_eq,
 using Batch: BatchObj,
              get_bt,
              get_bt_svm,
-             get_bt_mobj,
              get_batch_comb_num,
-             load_cvm_opt_results_df,
-             load_svm_opt_results_df,
              opt_k_struct_df_name,
              opt_k_struct_df_coltypes,
              BatchStruct,
@@ -66,48 +63,30 @@ using Batch: BatchObj,
              main_dir, res_dir
 
 
-using FullInfoEq: set_full_information_vb!,
-                  find_optimal_bond_measure,
-                  find_full_info_vb
+using FullInfoEq: find_optimal_bond_measure,
+                  find_full_info_vb,
+                  set_full_information_vb!
+
+
+using JointEqStructs: FirmSpecificParams,
+                      RMPCFirmObj,
+                      TypesDist,
+                      FirmType,
+                      MarketTypeDist,
+                      BondContract,
+                      TypesCommonParams,
+                      JointFirms, JointKStruct,
+                      ep_dir, fi_dir, jeq_dir, fidf_name,
+                      misrepdf_name, pooldf_name, sepdf_name,
+                      fidf_col_types, mps_col_types, epmcols,
+                      epm_eq_cols, commoncols, fspcols, vbcols,
+                      jeq_comb_folder_dict, common_dir_par_list,
+                      file_name_par_list, jks_eq_fd_cols,
+                      eq_type_dict, dup_rows_params, update_jks
 
 
 # * Structs, Inputs Objects and Constructor Methods ############
 # ** Joint Structs
-# include("_joint_objects/_joint_structs.jl")
-mutable struct JointKStruct
-    mu_s::Float64
-    mu_b::Float64
-    m::Float64
-    c::Float64
-    p::Float64
-    vbl::Float64
-
-    # Safe Firm
-    fi_sf_vb::Float64
-    sf_vb::Float64
-
-    # Risk Firm
-    fi_rf_vb::Float64
-    rf_vb::Float64
-end
-
-
-@with_kw mutable struct FirmObj
-    bt
-    svm
-end
-
-mutable struct JointFirms
-    jks #::JointKStruct
-    sf::Firm
-    rf::Firm
-    cvm_bt
-    svm_bt
-    cvmdf::DataFrame
-    svmdf::DataFrame
-end
-
-
 mutable struct JointFDParams
     # Safe Firm
     sf_eq_vbl::Float64
@@ -116,46 +95,6 @@ mutable struct JointFDParams
     # Risk Firm
     rf_eq_vbl::Float64
     rf_eq_max::Float64
-end
-
-
-
-# #############################################################
-mutable struct FirmSpecificParams
-    iota::Float64
-    lambda::Float64
-    sigmal::Float64
-    sigmah::Float64
-end
-
-
-mutable struct FirmCommonParams
-    V0::Float64
-    alpha::Float64
-    pi::Float64
-    r::Float64
-    gross_delta::Float64
-    xi::Float64
-    # sigmal::Float64
-end
-
-
-mutable struct JointEqParams
-    # Measure of Bonds
-    mu_s::Float64
-    
-    # Transaction Costs
-    kep::Float64
-    kotc::Float64
-
-    # Safe Firm Params
-    sfp::FirmSpecificParams
-
-    # Risky Firm Params
-    rfp::FirmSpecificParams
-
-    # Firm Common Params
-    fcp::FirmCommonParams
 end
 
 
@@ -182,7 +121,8 @@ end
 
 mutable struct JointEquilibrium
     # Joint Equilibrium Params
-    jep::JointEqParams
+    # jep::JointEqParams
+    jep
 
     # Electronic Platform Data
     ep::EPStruct
@@ -195,80 +135,13 @@ end
 # ** Joint Inputs
 # Inputs -> in this order (need to define structs first)
 # include("_joint_inputs.jl")
-empty_jep = JointEqParams(vcat(fill(NaN,3), 
-                               FirmSpecificParams(fill(NaN,4)...),
-                               FirmSpecificParams(fill(NaN,4)...),
-                               FirmCommonParams(fill(NaN, 6)...))...)
-
-# Directories and File Names
-ep_dir = "EP"
-fi_dir = "FI"
-jeq_dir = "JEQ"
-fidf_name = "fidf"
-misrepdf_name = "misrepdf"
-pooldf_name = "pooldf"
-sepdf_name = "sepdf"
+# empty_jep = JointEqParams(vcat(fill(NaN,3), 
+#                                FirmSpecificParams(fill(NaN,4)...),
+#                                FirmSpecificParams(fill(NaN,4)...),
+#                                TypesCommonParams(fill(NaN, 7)...))...)
+empty_jep = nothing
 
 
-# DataFrames Column Types
-fidf_col_types = vcat(fill(Float64, 9), [Bool], fill(Float64, 17))
-# Misrepresentation, Pool and Separating DFs Column Types
-mps_col_types = vcat(String, Bool, fill(Float64, 11), Bool,
-                     fill(Float64, 10), String, fill(Float64, 5),
-                     Bool, fill(Float64, 10), String,
-                     fill(Float64, 7))
-
-# Electronic Market Parameters
-epmcols = [:kappa, :mu_s, :m, :c, :p]
-epm_eq_cols = [:obj_fun, :sf_defaults_first]
-
-# Common Parameters
-commoncols = vcat(fieldnames(FirmCommonParams)...)
-
-# Firm Specific Parameters
-fspcols = vcat(fieldnames(FirmSpecificParams)...)
-
-# Default Boundaries
-vbcols = [:fi_vb, :sf_vb, :rf_vb, :vb]
-
-
-# Results Directories and File Names ################################ 
-jeq_comb_folder_dict = deepcopy(comb_folder_dict)
-jeq_comb_folder_dict[:kappa] = vcat(["kappa_", comb_folder_dict[:kappa][2:3]...])
-jeq_comb_folder_dict[:alpha] = ["__alpha_", "%.2f"]
-jeq_comb_folder_dict[:pi] = ["__pi_", "%.2f"]
-jeq_comb_folder_dict[:r] = ["__r_", "%.3f"]
-
-# Capital Structure
-jeq_comb_folder_dict[:c] = ["__c_", comb_folder_dict[:c][2]]
-jeq_comb_folder_dict[:p] = ["__p_", comb_folder_dict[:c][2]]
-jeq_comb_folder_dict[:mu_s] = ["_mus_", "%.4f"]
-
-# P/C ratio:
-jeq_comb_folder_dict[:pcr] = ["_pcr_", "%.2f"]
-
-common_dir_par_list = [:kappa, :sigmal] #, :gross_delta, :r, :alpha, :pi, :xi]
-file_name_par_list = [:iota, :lambda, :sigmah]
-
-eq_type_dict = Dict{String, Dict{Symbol, String}}(
-    "full_info" => Dict{Symbol, String}(:dfn => fidf_name,
-                                        :fn_prefix => "fi"),
-    "misrep" => Dict{Symbol, String}(:dfn => misrepdf_name,
-                                       :fn_prefix => "misrep"),
-    "pooling" => Dict{Symbol, String}(:dfn => pooldf_name,
-                                     :fn_prefix => "pool"),
-    "separating" => Dict{Symbol, String}(:dfn => sepdf_name,
-                                        :fn_prefix => "sep"))
-
-dup_rows_params = [:eq_type, :kappa, :mu_s, 
-                   :m, :c, :p,
-                   :s_iota, :s_lambda, :s_sigmah,         
-                   :s_delta, :s_obj_fun, #:s_eq_type,
-                   :r_iota, :r_lambda, :r_sigmah,         
-                   :r_delta, :r_obj_fun, #:r_eq_type,
-                   :V0, :alpha, :pi, :r,
-                   :gross_delta, :xi, :sigmal]
-# ###################################################################
 
 
 # ** Joint Ep Constructor
@@ -442,7 +315,7 @@ function ep_constructor(jep, sf_bt, rf_bt;
         # Reshape
         ep_misrep_eqdf = reshape_sf_rf_df(ep_misrep_eqdf)
     else
-        ep_misrep_eqdf = DataFrame()
+        ep_misrep_eqdf = DataFrame(mp)
     end
     # ##################################################################
 
@@ -491,64 +364,6 @@ end
 
 
 # ** Joint Constructor
-# include("_joint_objects/_joint_constructors.jl")
-function joint_firm_constructor(sf::Firm, rf::Firm;
-                                sf_comb_num::Int64=0,
-                                rf_comb_num::Int64=0,
-                                # jks::JointKStruct=JointKStruct(fill(NaN, 10)...),
-                                jks=JointKStruct(fill(NaN, 10)...),
-                                m::Float64=NaN,
-                                firm_obj_fun::Symbol=:firm_value,
-                                load_results_dfs::Bool=false,
-                                cvmdf::DataFrame=DataFrame(),
-                                svmdf::DataFrame=DataFrame(),                               
-                                opt_k_struct_df_name::String=opt_k_struct_df_name,
-                                recompute_svm::Bool=false)
-
-    # Form Batch Objects ###################################
-    sf_bt = BatchObj(; model=sf.model)
-    rf_bt = BatchObj(; model=rf.model)
-    if sf_comb_num > 0
-        sf_bt = set_par_dict(sf_bt; comb_num=sf_comb_num)
-    end
-    if rf_comb_num > 0
-        rf_bt = set_par_dict(rf_bt; comb_num=rf_comb_num)
-    end
-    # ######################################################
-    
-    if .&(isnan(m), !isnan(jks.m))
-        m = jks.m
-    end
-
-    if load_results_dfs
-        #cvm_bt = BatchObj(; model="cvm")
-        svm_bt = BatchObj(; model="svm")
-
-        cvmdf = load_cvm_opt_results_df(; m=m, firm_obj_fun=firm_obj_fun)
-        svmdf = load_svm_opt_results_df(svm_bt; m=m,
-                                        firm_obj_fun=firm_obj_fun,
-                                        opt_k_struct_df_name=opt_k_struct_df_name,
-                                        recompute=recompute_svm)
-    end
-
-    # Set Optimal Capital Structure ########################
-    df = (sf.model == "cvm") ? cvmdf : svmdf
-    if .&(sf_comb_num > 0, !isempty(df))
-        sf = set_opt_k_struct(sf, df)
-    end
-    
-    df = (rf.model == "cvm") ? cvmdf : svmdf
-    if .&(rf_comb_num > 0, !isempty(df))
-        rf = set_opt_k_struct(rf, df)
-    end
-    # #####################################################
-    
-
-    jf = JointFirms(jks, sf, rf, sf_bt, rf_bt, cvmdf, svmdf)
-    #jf = JointFirms(jks, sf, rf, cvm_bt, svm_bt, cvmdf, svmdf)
-end
-
-
 function otc_constructor(jep, sf_bt, rf_bt; otc_m::Float64=NaN)
     # Adjust parameter dictionaries
     for var in [:alpha, :pi, :r, :gross_delta, :xi, :sigmal]
@@ -706,7 +521,7 @@ end
 
 # ** Joint Capital Structure Functions
 # include("_joint_objects/_joint_k_struct_funs.jl")
-function get_joint_k_struct!(jf;
+function get_joint_k_struct!(sf, rf;
                              jks=JointKStruct(fill(NaN, 10)...),
                              mu_b::Float64=NaN,
                              m::Float64=NaN,
@@ -721,71 +536,80 @@ function get_joint_k_struct!(jf;
     
     if !isnan(mu_b)
         setfield!(jks, :mu_b, mu_b)
-    elseif isnan(jks.mu_b)
-        setfield!(jks, :mu_b, jf.jks.mu_b)
     end
 
     if !isnan(m)
         setfield!(jks, :m, m)
     elseif isnan(jks.m)
-        setfield!(jks, :m, jf.jks.m)
+        setfield!(jks, :m, jf.bc.m)
     end
     
     if !isnan(c)
         setfield!(jks, :c, c)
     elseif isnan(jks.c)
-        setfield!(jks, :c, jf.jks.c)
+        setfield!(jks, :c, jf.bc.c)
     end
 
     if !isnan(p)
         setfield!(jks, :p, p)
     elseif isnan(jks.p)
-        setfield!(jks, :p, jf.jks.p)
+        setfield!(jks, :p, jf.bc.p)
     end
    
     return jks 
 end
 
 
-function joint_eq_set_k_struct!(jf;
-                                jks=JointKStruct(fill(NaN, 10)...),
+function joint_eq_set_k_struct!(sf, rf, jks;
                                 mu_s::Float64=NaN,
                                 mu_b::Float64=NaN,
                                 m::Float64=NaN,
                                 c::Float64=NaN,
                                 p::Float64=NaN,
                                 rerun_fi_vb::Bool=false,
-                                fi_sf_vb::Float64=NaN,
-                                sf_vb::Float64=NaN,
-                                fi_rf_vb::Float64=NaN,
-                                rf_vb::Float64=NaN,
+                                fi_st_vb::Float64=NaN,
+                                st_vb::Float64=NaN,
+                                fi_rt_vb::Float64=NaN,
+                                rt_vb::Float64=NaN,
                                 lb::Float64=.75,
                                 ub::Float64=1.25,
                                 vbN::Int64=20)
+
+
     
-    jks = get_joint_k_struct!(jf; jks=jks,
-                              mu_b=mu_b,
-                              m=m, c=c, p=p)
+    # Update Joint Capital Structure Struct
+    jks = update_jks(jks; mu_s=mu_s,
+                     mu_b=mu_b, m=m,
+                     c=c, p=p,
+                     fi_st_vb=fi_st_vb,
+                     fi_rt_vb=fi_rt_vb,
+                     st_vb=st_vb,
+                     rt_vb=rt_vb)
+
+    # jks = get_joint_k_struct!(jf; jks=jks,
+    #                           mu_b=mu_b,
+    #                           m=m, c=c, p=p)
 
     # Default Barriers ##############################
-    # Full Information: fi_sf_vb, fi_rf_vb
-    jks = set_full_information_vb!(jf, jks;
+    # Full Information: fi_st_vb, fi_rt_vb
+    jks = set_full_information_vb!(sf, rf, jks;
                                    rerun_fi_vb=rerun_fi_vb,
-                                   fi_sf_vb=fi_sf_vb,
-                                   fi_rf_vb=fi_rf_vb,
+                                   fi_st_vb=fi_st_vb,
+                                   fi_rt_vb=fi_rt_vb,
                                    lb=lb, ub=ub,
                                    vbN=vbN)
     
-    # setfield!(jks, :sf_vb, maximum(x->isnan(x) ? -Inf : x, [sf_vb, jks.fi_sf_vb]))
+    # setfield!(jks, :st_vb, maximum(x->isnan(x) ? -Inf : x, [st_vb, jks.fi_st_vb]))
 
-    # rf_vb = maximum([minimum(x->isnan(x) ? Inf : x, [rf_vb, jks.fi_rf_vb]),
-    #                  jks.sf_vb])
-    # setfield!(jks, :rf_vb, minimum(x->isnan(x) ? Inf : x, [rf_vb, jks.fi_rf_vb]))
+    # rt_vb = maximum([minimum(x->isnan(x) ? Inf : x, [rt_vb, jks.fi_rt_vb]),
+    #                  jks.st_vb])
+    # setfield!(jks, :rt_vb, minimum(x->isnan(x) ? Inf : x, [rt_vb, jks.fi_rt_vb]))
 
-    jks.sf_vb = !isnan(sf_vb) ? sf_vb : jks.fi_sf_vb
-    jks.rf_vb = !isnan(rf_vb) ? rf_vb : jks.fi_rf_vb
+    jks.st_vb = !isnan(st_vb) ? st_vb : jks.fi_st_vb
+    jks.rt_vb = !isnan(rt_vb) ? rt_vb : jks.fi_rt_vb
+
     # Joint Equilibrium Barrier
-    setfield!(jks, :vbl, maximum([jks.sf_vb, jks.rf_vb]))
+    setfield!(jks, :vbl, maximum([jks.st_vb, jks.rt_vb]))
     # ###############################################
 
     # Measure of Safe Firms
@@ -804,31 +628,30 @@ end
 
 
 function get_type_contingent_vbs(vbl::Float64, 
-                                 fi_sf_vb::Float64, 
-                                 fi_rf_vb::Float64;
+                                 fi_st_vb::Float64, 
+                                 fi_rt_vb::Float64;
                                  sf_defaults_first::Bool=true)
     
-    sf_vb = fi_sf_vb
-    rf_vb = fi_rf_vb
-    if vbl > maximum([fi_sf_vb, fi_rf_vb])
-        sf_vb = sf_defaults_first ? vbl : fi_sf_vb
-        rf_vb = !sf_defaults_first ? vbl : fi_rf_vb
-    elseif  vbl < minimum([fi_sf_vb, fi_rf_vb])
-        sf_vb = rf_vb = vbl
-    elseif fi_sf_vb <= fi_rf_vb
-        sf_vb = sf_defaults_first ? vbl : fi_sf_vb
-        rf_vb = vbl
-    else # fi_sf_vb > vbl > fi_rf_vb
-        sf_vb = vbl
-        rf_vb = !sf_defaults_first ? vbl : fi_rf_vb
+    st_vb = fi_st_vb
+    rt_vb = fi_rt_vb
+    if vbl > maximum([fi_st_vb, fi_rt_vb])
+        st_vb = sf_defaults_first ? vbl : fi_st_vb
+        rt_vb = !sf_defaults_first ? vbl : fi_rt_vb
+    elseif  vbl < minimum([fi_st_vb, fi_rt_vb])
+        st_vb = rt_vb = vbl
+    elseif fi_st_vb <= fi_rt_vb
+        st_vb = sf_defaults_first ? vbl : fi_st_vb
+        rt_vb = vbl
+    else # fi_st_vb > vbl > fi_rt_vb
+        st_vb = vbl
+        rt_vb = !sf_defaults_first ? vbl : fi_rt_vb
     end
-     
     
-    return sf_vb, rf_vb
+    return st_vb, rt_vb
 end
 
 
-function interp_optimal_vbs(jf, jks, df::DataFrame; 
+function interp_optimal_vbs(jks, df::DataFrame; 
                             sf_defaults_first::Bool=true, 
                             vbN::Int64=10^5,
                             spline_k::Int64=3,
@@ -844,35 +667,34 @@ function interp_optimal_vbs(jf, jks, df::DataFrame;
     end
 
     # Find Optimal VBs
-    opt_sf_vb = vb_grid[argmin(abs.(tmp[:sf_eq_deriv](vb_grid)))]
-    opt_rf_vb = vb_grid[argmin(abs.(tmp[:rf_eq_deriv](vb_grid)))]
+    opt_st_vb = vb_grid[argmin(abs.(tmp[:sf_eq_deriv](vb_grid)))]
+    opt_rt_vb = vb_grid[argmin(abs.(tmp[:rf_eq_deriv](vb_grid)))]
 
-    return opt_sf_vb, opt_rf_vb
+    return opt_st_vb, opt_rt_vb
 end
 
 
-function refine_contingent_vbs(jf, jks, 
-                               sf_vb::Float64, rf_vb::Float64; 
+function refine_contingent_vbs(sf, rf, jks, 
+                               st_vb::Float64, rt_vb::Float64; 
                                sf_defaults_first::Bool=false,
                                N::Int64=7,
                                spline_k::Int64=3, 
                                spline_bc::String="extrapolate")
     
-    tvb = !(sf_defaults_first) ? rf_vb : sf_vb
-    tvar = !(sf_defaults_first) ? :rf_vb : :sf_vb
-    cond_var = !(sf_defaults_first) ? :sf_vb : :rf_vb
+    tvb = !(sf_defaults_first) ? rt_vb : st_vb
+    tvar = !(sf_defaults_first) ? :rt_vb : :st_vb
+    cond_var = !(sf_defaults_first) ? :st_vb : :rt_vb
     
     dfL = []
     for vb in range(.95 * tvb, stop = 1.05 * tvb, length=N)
-        sf_vb, rf_vb = JointEq.get_type_contingent_vbs(vb,
-                                                       jks.fi_sf_vb,
-                                                       jks.fi_rf_vb; 
-                                                       sf_defaults_first=sf_defaults_first)
-        tmp = JointEq.joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+        st_vb, rt_vb = get_type_contingent_vbs(vb, jks.fi_st_vb,
+                                               jks.fi_rt_vb; 
+                                               sf_defaults_first=sf_defaults_first)
+        tmp = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
         push!(dfL, tmp)
     end
     df = vcat(dfL...)
-    cond = isnan.(df[cond_var])
+    cond = isnan.(df[:, cond_var])
     
     tvb_grid = range(minimum(df[cond, tvar]), stop=maximum(df[cond, tvar]), length=10^5)
     tvb_interp = Dierckx.Spline1D(df[cond, tvar], df[cond, :eq_deriv]; 
@@ -880,17 +702,17 @@ function refine_contingent_vbs(jf, jks,
     
     
     opt_tvb = tvb_grid[argmin(abs.(tvb_interp(tvb_grid)))]
-    sf_vb, rf_vb = get_type_contingent_vbs(opt_tvb,
-                                           jks.fi_sf_vb,
-                                           jks.fi_rf_vb; 
+    st_vb, rt_vb = get_type_contingent_vbs(opt_tvb,
+                                           jks.fi_st_vb,
+                                           jks.fi_rt_vb; 
                                            sf_defaults_first=sf_defaults_first)
     
-    return joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    return joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
 end
 # ##########################################################
 
 
-# * Auxiliary File and DataFrame Methods ########################
+# * Auxiliary File and DataFrame Methods
 # ** Joint Auxiliary Functions
 # include("_joint_auxiliary/_joint_functions.jl")
 function store_joint_eq_parameters(mu_s::Float64,
@@ -957,13 +779,13 @@ function store_joint_eq_parameters(mu_s::Float64,
     end
 
     # Set Common Parameters
-    fcp = FirmCommonParams(common_params[:V0],
+    fcp = TypesCommonParams(common_params[:V0],
                            common_params[:alpha],
                            common_params[:pi],
                            common_params[:r],
                            svm_param_values_dict[:gross_delta][1],
-                           svm_param_values_dict[:xi][1]) #,
-                           # svm_param_values_dict[:sigmal][1])
+                           svm_param_values_dict[:xi][1],
+                           svm_param_values_dict[:sigmal][1])
     setfield!(jep, :fcp, fcp)
 
 
@@ -1273,19 +1095,19 @@ function reshape_sf_rf_df(df::DataFrame)
         rfdf = DataFrame(df[2, specific_cols])
     else
         ksdf = DataFrame(df[1, [:eq_type, :sf_defaults_first, epmcols..., :vb]])
-        sfdf = DataFrame(df[1, vcat([:sf_vb], specific_cols)])
-        rfdf = DataFrame(df[2, vcat([:rf_vb], specific_cols)])
+        sfdf = DataFrame(df[1, vcat([:st_vb], specific_cols)])
+        rfdf = DataFrame(df[2, vcat([:rt_vb], specific_cols)])
     end
 
     # Common Parameters
     commondf =  DataFrame(df[1, jeq_commoncols])
 
     # Safe Firm Results
-    names!(sfdf, vcat([:sf_vb], [Symbol(:s_, col) for col in specific_cols
+    names!(sfdf, vcat([:st_vb], [Symbol(:s_, col) for col in specific_cols
                                  if (col != :sf_defaults_first)]))
 
     # Risky Firm Results
-    names!(rfdf, vcat([:rf_vb], [Symbol(:r_, col) for col in specific_cols
+    names!(rfdf, vcat([:rt_vb], [Symbol(:r_, col) for col in specific_cols
                                  if (col != :sf_defaults_first)]))
 
     return hcat(ksdf, sfdf, rfdf, commondf)
@@ -1454,13 +1276,18 @@ end
 function get_jeq_common_params_dir(jf)
     common_param_dir = ""
     for par in common_dir_par_list
-        if par in [:kappa, :gross_delta]
+        if par == :kappa
             par_string =  string(str_format_fun(jeq_comb_folder_dict[par][2],
-                                                1e4 * get_param(jf.sf, par)),
+                                                1e4 * jf.kappa),
+                                 jeq_comb_folder_dict[par][3])
+
+        elseif par == :gross_delta
+            par_string =  string(str_format_fun(jeq_comb_folder_dict[par][2],
+                                                1e4 * getfield(jf.cp, par)),
                                  jeq_comb_folder_dict[par][3])
         else
             par_string =  string(str_format_fun(jeq_comb_folder_dict[par][2],
-                                                get_param(jf.sf, par)))
+                                                getfield(jf.cp, par)))
         end
         common_param_dir = string(common_param_dir, jeq_comb_folder_dict[par][1], par_string)
     end
@@ -1470,28 +1297,28 @@ end
 
 
 function get_jks_dir(jf)
-    pcr = jf.jks.p/jf.jks.c
+    pcr = jf.bc.p/jf.bc.c
     
-    return string(jeq_comb_folder_dict[:m][1], str_format_fun(jeq_comb_folder_dict[:m][2], jf.jks.m), 
+    return string(jeq_comb_folder_dict[:m][1], str_format_fun(jeq_comb_folder_dict[:m][2], jf.bc.m), 
                   jeq_comb_folder_dict[:pcr][1], str_format_fun(jeq_comb_folder_dict[:pcr][2], pcr))
 end
 
 
-function get_jeq_jks_fpath(jf)
-    jeq_fpath = make_jeq_res_fpath()
-    common_params_dir = get_jeq_common_params_dir(jf)
+# function get_jeq_jks_fpath(jf)
+#     jeq_fpath = make_jeq_res_fpath()
+#     common_params_dir = get_jeq_common_params_dir(jf)
     
-    common_params_fpath = string(jeq_fpath, "/", common_params_dir)
-    jks_dir = get_jks_dir(jf)
+#     common_params_fpath = string(jeq_fpath, "/", common_params_dir)
+#     jks_dir = get_jks_dir(jf)
 
-    return string(common_params_fpath, "/", jks_dir)
-end
+#     return string(common_params_fpath, "/", jks_dir)
+# end
 # ##############################################################
 
 
 # Get Paths ####################################################
 function get_res_fpath(jf)
-    return string(jf.svm_bt.mi.main_dir_path, "/", res_dir)
+    return string(jf.st.rm.bt.mi.main_dir_path, "/", res_dir)
 end
 
 
@@ -1563,15 +1390,64 @@ end
 # ##############################################################
 
 
-# * Joint Pricing Functions #####################################
-# include("_joint_pricing.jl")
-function adjust_pricing_parameters(jf, jks, mu_s, Vt, vt)
-    # Capital Structure
-    for fn in fieldnames(JointKStruct)
-        if isnan(getfield(jks, fn))
-            setfield!(jks, fn, getfield(jf.jks, fn))
-        end
+# ** Set and Get Methods
+function get_otc_fi_opt_rmp(ft::FirmType)
+    if .&(!isnothing(ft.rm.fr), isnothing(ft.nrm.fr))
+        opt_rmp = :rm
+    elseif .&(!isnothing(ft.rm.fr), !isnothing(ft.nrm.fr))
+        rm_debt = BondPrInterp.get_cvm_debt_price(ft.rm.fr, ft.rm.fr.optKS.vbl, 
+                                          ft.rm.fr.pm.sigmal;
+                                          mu_b=ft.rm.fr.optKS.mu_b, 
+                                          m=ft.rm.fr.optKS.m, 
+                                          c=ft.rm.fr.optKS.c,    
+                                          p=ft.rm.fr.optKS.p)
+
+        rm_eq = EqFinDiff.get_cvm_eq(ft.rm.fr, ft.rm.fr.pm.V0,
+                                      ft.rm.fr.pm.sigmal;
+                                      mu_b=ft.rm.fr.optKS.mu_b, 
+                                      m=ft.rm.fr.optKS.m, 
+                                      c=ft.rm.fr.optKS.c,    
+                                      p=ft.rm.fr.optKS.p)
+        
+        rm_fv = rm_debt + rm_eq
+        
+        nrm_res = EqFinDiff.eq_fd(ft.nrm.fr; vbl=ft.nrm.fr.optKS.vbl, 
+                                  mu_b=ft.nrm.fr.optKS.mu_b, 
+                                  m=ft.nrm.fr.optKS.m, 
+                                  c=ft.nrm.fr.optKS.c,    
+                                  p=ft.nrm.fr.optKS.p)
+        
+        nrm_fv = nrm_res[:firm_value]
+        
+        opt_rmp = rm_fv > nrm_fv ? :rm : :nrm
+    else
+        println("Error! Missing Risk-Management results. Exiting...")
+        return
     end
+    
+    return opt_rmp
+end
+
+
+function get_types_common_params(ft::FirmType)
+        return TypesCommonParams(ft.rm.fr.pm.V0,
+                                 ft.rm.fr.pm.alpha,
+                                 ft.rm.fr.pm.pi,
+                                 ft.rm.fr.pm.r,
+                                 ft.rm.fr.pm.gross_delta,
+                                 ft.rm.fr.pm.xi,
+                                 ft.rm.fr.pm.sigmal)
+end
+
+
+# * Joint Pricing Functions - Adjusted
+# include("_joint_pricing.jl")
+function joint_bond_price(sf, rf, jks,
+                          ttm::Float64;
+                          mu_s::Float64=NaN,
+                          vt::Float64=NaN, Vt::Float64=NaN,
+                          sf_ftype::String="bf",
+                          rf_ftype::String="bf")
 
     # Measure of Safe Firms
     if isnan(mu_s)
@@ -1583,51 +1459,37 @@ function adjust_pricing_parameters(jf, jks, mu_s, Vt, vt)
         println("Setting mu_s to 1.!")
         mu_s = 1.
     end
-    
 
     # Set Asset Value
     if .&(isnan(Vt), isnan(vt))
-        Vt = get_param(jf.sf, :V0)
+        Vt = get_param(sf, :V0)
         vt = log(Vt/jks.vbl)
     elseif isnan(vt)
         vt = log(Vt/jks.vbl)
     end
-    
-    return jks, mu_s, vt
-end
-
-
-function joint_bond_price(jf, ttm::Float64;
-                          jks=JointKStruct(fill(NaN, 10)...),
-                          mu_s::Float64=NaN,
-                          vt::Float64=NaN, Vt::Float64=NaN,
-                          sf_ftype::String="bf",
-                          rf_ftype::String="bf")
-
-    jks, mu_s, vt = adjust_pricing_parameters(jf, jks, mu_s, Vt, vt)
 
     # Compute Bond Prices
-    if get_obj_model(jf.sf) == "cvm" 
-        sf_bpr = get_cvm_bond_price(jf.sf, ttm, jf.sf.pm.sigmal;
+    if get_obj_model(sf) == "cvm" 
+        sf_bpr = get_cvm_bond_price(sf, ttm, sf.pm.sigmal;
                                     Vt=jks.vbl * exp(vt),
-                                    vb=jks.sf_vb,
+                                    vb=jks.st_vb,
                                     mu_b=jks.mu_b, m=jks.m,
                                     c=jks.c, p=jks.p)
     else
-        sf_bpr = get_svm_bond_price(jf.sf, jks.sf_vb, ttm;
+        sf_bpr = get_svm_bond_price(sf, jks.st_vb, ttm;
                                     Vt=jks.vbl * exp(vt), 
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ftype=sf_ftype)
     end
 
-    if get_obj_model(jf.rf) == "cvm" 
-        rf_bpr = get_cvm_bond_price(jf.rf, ttm, jf.rf.pm.sigmal;
+    if get_obj_model(rf) == "cvm" 
+        rf_bpr = get_cvm_bond_price(rf, ttm, rf.pm.sigmal;
                                     Vt=jks.vbl * exp(vt),
-                                    vb=jks.rf_vb,
+                                    vb=jks.rt_vb,
                                     mu_b=jks.mu_b, m=jks.m,
                                     c=jks.c, p=jks.p)
     else   
-        rf_bpr = get_svm_bond_price(jf.rf, jks.rf_vb, ttm;
+        rf_bpr = get_svm_bond_price(rf, jks.rt_vb, ttm;
                                     Vt=jks.vbl * exp(vt), 
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ftype=rf_ftype)
@@ -1638,29 +1500,44 @@ function joint_bond_price(jf, ttm::Float64;
 end
 
 
-function joint_debt_price(jf;
-                          jks=JointKStruct(fill(NaN, 10)...),
+function joint_debt_price(sf, rf, jks;
                           mu_s::Float64=NaN,
                           vt::Float64=NaN,
                           Vt::Float64=NaN,
                           ttmN0::Int64=10^2,
                           ttmN::Int64=10^4)
 
-    jks, mu_s, vt = adjust_pricing_parameters(jf, jks, mu_s, Vt, vt)
+    # Measure of Safe Firms
+    if isnan(mu_s)
+        mu_s = jks.mu_s
+    elseif mu_s < 0.
+        println("Setting mu_s to zero!")
+        mu_s = 0.0
+    elseif mu_s > 1.
+        println("Setting mu_s to 1.!")
+        mu_s = 1.
+    end
 
+    # Set Asset Value
+    if .&(isnan(Vt), isnan(vt))
+        Vt = get_param(sf, :V0)
+        vt = log(Vt/jks.vbl)
+    elseif isnan(vt)
+        vt = log(Vt/jks.vbl)
+    end
     
     # Compute Debt Price #################################################
     # either model is CVM or bond surface maturity
     # must coincide with capital structure maturity.
-    if get_obj_model(jf.sf) == "cvm" 
-        sf_dpr = get_cvm_debt_price(jf.sf, jks.sf_vb,
-                                    jf.sf.pm.sigmal;
+    if get_obj_model(sf) == "cvm" 
+        sf_dpr = get_cvm_debt_price(sf, jks.st_vb,
+                                    sf.pm.sigmal;
                                     Vt=jks.vbl * exp(vt), 
                                     mu_b=jks.mu_b, m=jks.m,
                                     c=jks.c, p=jks.p,
                                     N1=ttmN0, N2=ttmN)
-    elseif abs.(jf.sf.m - jks.m) < 1e-4
-        sf_dpr = get_svm_debt_price(jf.sf, jks.sf_vb;
+    elseif abs.(sf.m - jks.m) < 1e-4
+        sf_dpr = get_svm_debt_price(sf, jks.st_vb;
                                     Vt=jks.vbl * exp(vt), 
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ttmN=ttmN)
@@ -1671,15 +1548,15 @@ function joint_debt_price(jf;
         return NaN
     end
 
-    if get_obj_model(jf.rf) == "cvm" 
-        rf_dpr = get_cvm_debt_price(jf.rf, jks.rf_vb,
-                                    jf.rf.pm.sigmal;
+    if get_obj_model(rf) == "cvm" 
+        rf_dpr = get_cvm_debt_price(rf, jks.rt_vb,
+                                    rf.pm.sigmal;
                                     Vt=jks.vbl * exp(vt), 
                                     mu_b=jks.mu_b, m=jks.m,
                                     c=jks.c, p=jks.p,
                                     N1=ttmN0, N2=ttmN)
-    elseif abs.(jf.rf.m - jks.m) < 1e-4
-        rf_dpr = get_svm_debt_price(jf.rf, jks.rf_vb;
+    elseif abs.(rf.m - jks.m) < 1e-4
+        rf_dpr = get_svm_debt_price(rf, jks.rt_vb;
                                     Vt=jks.vbl * exp(vt), 
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ttmN=ttmN)
@@ -1695,7 +1572,7 @@ function joint_debt_price(jf;
 end
 
 
-function joint_eq_fd_newly_issued_bonds(jf, jks, vbl::Float64,
+function joint_eq_fd_newly_issued_bonds(sf, rf, jks, vbl::Float64,
                                         vgrid::StepRangeLen{Float64,Base.TwicePrecision{Float64},
                                                             Base.TwicePrecision{Float64}};
                                         vtN::Int64=10^3,
@@ -1706,35 +1583,29 @@ function joint_eq_fd_newly_issued_bonds(jf, jks, vbl::Float64,
 
     # Common Payoffs ###############################
     rfbond = rfbond_price(jks.m, jks.c, jks.p,
-                          jf.sf.pm.r, jf.sf.pm.xi,
-                          jf.sf.pm.kappa)
-    
-    #dpayoff = on_default_payoff(0., vbl, jks.m, jks.mu_b,
-    #                            jks.m, jks.c, jks.p,
-    #                            jf.sf.pm.r, jf.sf.pm.xi,
-    #                            jf.sf.pm.kappa, jf.sf.pm.alpha)
+                          sf.pm.r, sf.pm.xi,
+                          sf.pm.kappa)
     # ##############################################
 
     
-    _, v_subgrid = grid_creator((1 + 1e-4) * minimum(jf.sf.bs.vtgrid), maximum(vgrid), vtN)
+    _, v_subgrid = grid_creator((1 + 1e-4) * minimum(sf.bs.vtgrid), maximum(vgrid), vtN)
 
     # ##############################################
     # Whether to compute bond pricing surfaces
     # (fixed maturity) on the fly
-    if any([abs.(jf.sf.m - jks.m) > 1e-4, sf_ftype == "bft"])
+    if any([abs.(sf.m - jks.m) > 1e-4, sf_ftype == "bft"])
         sf_ftype = "bft"
-        jf.sf = bpr_interp_fixed_ttm(jf.sf; ttm=jks.m)
+        sf = bpr_interp_fixed_ttm(sf; ttm=jks.m)
     end
 
-    if any([abs.(jf.rf.m - jks.m) > 1e-4, rf_ftype == "bft"])
+    if any([abs.(rf.m - jks.m) > 1e-4, rf_ftype == "bft"])
         rf_ftype = "bft"
-        jf.rf = bpr_interp_fixed_ttm(jf.rf; ttm=jks.m)
+        rf = bpr_interp_fixed_ttm(rf; ttm=jks.m)
     end
     # ###############################################
 
-    bpr_vec = fetch(@spawn [joint_bond_price(jf, jks.m; vt=v,
-                                             jks=jks,
-                                             mu_s=jks.mu_s,
+    bpr_vec = fetch(@spawn [joint_bond_price(sf, rf, jks, jks.m;
+                                             vt=v, mu_s=jks.mu_s,
                                              sf_ftype=sf_ftype,
                                              rf_ftype=rf_ftype) for v in v_subgrid])
     
@@ -1745,17 +1616,17 @@ function joint_eq_fd_newly_issued_bonds(jf, jks, vbl::Float64,
 end
 
 
-# * Equilibrium Methods -> Equity, Vb, mu_b Functions ###########
-# ** Joint Equity Finite Differences
+# * Equilibrium Methods -> Equity, Vb, mu_b Functions - Adjusted
+# ** Joint Equity Finite Differences - Adjusted
 # include("_joint_equilibrium/_joint_eq_fin_diff.jl")
-function joint_eq_get_Vmax_vgrid(jf, jks, vbl::Float64; vtN::Int64=1500)
+function joint_eq_get_Vmax_vgrid(sf, rf, jks, vbl::Float64; vtN::Int64=1500)
     # V MAX ######################################
     println("Computing Equity Vmax")
     # Safe Firm
-    sf_eq_Vmax = get_eq_Vmax(jf.sf; mu_b=jks.mu_b, m=jks.m, c=jks.c, p=jks.p)
+    sf_eq_Vmax = get_eq_Vmax(sf; mu_b=jks.mu_b, m=jks.m, c=jks.c, p=jks.p)
 
     # Risky Firm
-    rf_eq_Vmax = get_eq_Vmax(jf.rf; mu_b=jks.mu_b, m=jks.m, c=jks.c, p=jks.p)
+    rf_eq_Vmax = get_eq_Vmax(rf; mu_b=jks.mu_b, m=jks.m, c=jks.c, p=jks.p)
 
     # Take the Maximum Value:
     eq_Vmax = maximum([sf_eq_Vmax, rf_eq_Vmax])
@@ -1805,84 +1676,59 @@ function joint_eq_get_boundary_values(tj, jks,
 end
 
 
-# DATAFRAME COLUMNS
-# K Structure
-jks_cols = [:mu_s, :m, :mu_b, :c, :p]
-
-# Default Barrier
-vb_cols = [:fi_vb, :sf_vb, :rf_vb, :vb]
-
-# EFD
-share_cols = [:eq_deriv, :eq_deriv_min_val, 
-              :eq_min_val, :eq_negative, 
-              :eq_vb, :MBR, :debt, :equity, 
-              :firm_value, :leverage]
-
-# Parameters
-param_cols = [:iota, :lambda, :sigmah, 
-              :gross_delta, :delta, :kappa, 
-              :sigmal, :V0, :xi, :r, :alpha, :pi]
-
-jks_eq_fd_cols = vcat(jks_cols, vb_cols, share_cols, param_cols)
-
-
 # Joint Equilibrium Equity Finite Differences
-function joint_eq_fd(jf; V0::Float64=NaN,
-                     jks=JointKStruct(fill(NaN, 10)...),
+function joint_eq_fd(sf, rf, jks;
                      mu_s::Float64=NaN,
                      mu_b::Float64=NaN,
                      m::Float64=NaN,
                      c::Float64=NaN,
                      p::Float64=NaN,
+                     fi_st_vb::Float64=NaN,
+                     fi_rt_vb::Float64=NaN,
+                     st_vb::Float64=NaN,
+                     rt_vb::Float64=NaN,
                      vbl::Float64=NaN,
-                     sf_vb::Float64=NaN,
-                     rf_vb::Float64=NaN,
-                     fi_sf_vb::Float64=NaN,
-                     fi_rf_vb::Float64=NaN,
                      cov_gross_delta::Float64=NaN,
                      debt::Float64=NaN,
                      sf_ftype::String="bf",
                      rf_ftype::String="bf",
                      lb::Float64=.75, ub::Float64=1.25, vbN::Int64=15,
                      vtN::Int64=1500)
-
+    
+    # V0::Float64=NaN,
     tic = time()
-
-    # Common Parameters #############################
-    if !check_param_consistency(jf)
-        println("Exiting...")
-        return
-    end
-    # ###############################################
-
+    
+    println("================================================================")
+    println("  ")
     # Set Capital Structure #########################
-    jks = joint_eq_set_k_struct!(jf; jks=jks,
+    jks = joint_eq_set_k_struct!(sf, rf, jks;
                                  mu_s=mu_s,
                                  mu_b=mu_b,
                                  m=m, c=c, p=p,
-                                 fi_sf_vb=fi_sf_vb,
-                                 sf_vb=sf_vb,
-                                 fi_rf_vb=fi_rf_vb,
-                                 rf_vb=rf_vb)
+                                 fi_st_vb=fi_st_vb,
+                                 st_vb=st_vb,
+                                 fi_rt_vb=fi_rt_vb,
+                                 rt_vb=rt_vb)
     # ###############################################
 
-    println("================================================================")
-    println("  ")
-    if !isnan(vbl)
-        setfield!(jks, :vbl, vbl)
-    end
+
+
+
     println(string("vbl: ", getfield(jks, :vbl)))
+    # ###############################################
     println("  ")
     println("================================================================")
+
     
     # Equity Boundary Values ########################
-    eq_Vmax, vtgrid = joint_eq_get_Vmax_vgrid(jf, jks, jks.vbl; vtN=vtN)
+    eq_Vmax, vtgrid = joint_eq_get_Vmax_vgrid(sf, rf, jks, jks.vbl;
+                                              vtN=vtN)
 
-    sf_eq_vbl, sf_eq_max = joint_eq_get_boundary_values(jf.sf, jks,
-                                                        jks.sf_vb,
+    sf_eq_vbl, sf_eq_max = joint_eq_get_boundary_values(sf, jks,
+                                                        jks.st_vb,
                                                         jks.vbl, eq_Vmax)
-    rf_eq_vbl, rf_eq_max = joint_eq_get_boundary_values(jf.rf, jks,
-                                                        jks.rf_vb,
+    rf_eq_vbl, rf_eq_max = joint_eq_get_boundary_values(rf, jks,
+                                                        jks.rt_vb,
                                                         jks.vbl, eq_Vmax)
     # ###############################################
 
@@ -1894,7 +1740,8 @@ function joint_eq_fd(jf; V0::Float64=NaN,
      # ###############################################   
 
     # Newly-Issued Bond Prices ######################
-    bond_prices = joint_eq_fd_newly_issued_bonds(jf, jks, jks.vbl,
+    bond_prices = joint_eq_fd_newly_issued_bonds(sf, rf,
+                                                 jks, jks.vbl,
                                                  vtgrid;
                                                  vtN=vtN,
                                                  sf_ftype=sf_ftype,
@@ -1903,7 +1750,7 @@ function joint_eq_fd(jf; V0::Float64=NaN,
     # ###############################################
 
     # Debt Price ###################################
-    debt_pr = joint_debt_price(jf; jks=jks)
+    debt_pr = joint_debt_price(sf, rf, jks)
 
     # ##############################################
     
@@ -1911,27 +1758,27 @@ function joint_eq_fd(jf; V0::Float64=NaN,
     # No adjustments to vtgrid, because
     # bond_prices and sf_eq_vbl already adjust for 
     # the differences in the default barrier.
-    sf_eq_dict = eq_fd_core(jf.sf, jks, jks.vbl,
+    sf_eq_dict = eq_fd_core(sf, jks, jks.vbl,
                             sf_eq_vbl, sf_eq_max,
                             vtgrid, bond_prices) # no adjustments
-                            # vtgrid .-log(jks.vbl/jks.sf_vb), bond_prices)
-    _, sf_df = eq_fd_export_results(jf.sf, jks, jks.vbl, sf_eq_dict; debt=debt_pr)
+                            # vtgrid .-log(jks.vbl/jks.st_vb), bond_prices)
+    _, sf_df = eq_fd_export_results(sf, jks, jks.vbl, sf_eq_dict; debt=debt_pr)
 
     sf_df[!, :mu_s] .= jks.mu_s
-    sf_df[!, :fi_vb] .= jks.fi_sf_vb 
-    sf_df[!, :sf_vb] .= jks.sf_vb
-    sf_df[!, :rf_vb] .= NaN   
+    sf_df[!, :fi_vb] .= jks.fi_st_vb 
+    sf_df[!, :st_vb] .= jks.st_vb
+    sf_df[!, :rt_vb] .= NaN   
     
-    rf_eq_dict = eq_fd_core(jf.rf, jks, jks.vbl,
+    rf_eq_dict = eq_fd_core(rf, jks, jks.vbl,
                             rf_eq_vbl, rf_eq_max,
                             vtgrid, bond_prices;
                             cov_gross_delta=cov_gross_delta)
-                            # vtgrid .-log(jks.vbl/jks.rf_vb), bond_prices)
-    _, rf_df = eq_fd_export_results(jf.rf, jks, jks.vbl, rf_eq_dict; debt=debt_pr)
+                            # vtgrid .-log(jks.vbl/jks.rt_vb), bond_prices)
+    _, rf_df = eq_fd_export_results(rf, jks, jks.vbl, rf_eq_dict; debt=debt_pr)
     rf_df[!, :mu_s] .= jks.mu_s
-    rf_df[!, :fi_vb] .= jks.fi_rf_vb 
-    rf_df[!, :sf_vb] .= NaN
-    rf_df[!, :rf_vb] .= jks.rf_vb
+    rf_df[!, :fi_vb] .= jks.fi_rt_vb 
+    rf_df[!, :st_vb] .= NaN
+    rf_df[!, :rt_vb] .= jks.rt_vb
     # ##############################################
 
     println(string("Total computation time: ", time() - tic))
@@ -1940,37 +1787,41 @@ function joint_eq_fd(jf; V0::Float64=NaN,
 end
 
 
-# ** Joint Optimal VB
+# ** Joint Optimal VB - Adjusted
 # include("_joint_equilibrium/_joint_optimal_vb.jl")
-function joint_vb_extract_results(jf, jks,
-                                   vbl::Float64;
-                                   fi_sf_vb::Float64=NaN,
-                                   fi_rf_vb::Float64=NaN,
-                                   sf_defaults_first::Bool=true)
+function joint_vb_extract_results(sf, rf, jks,
+                                  vbl::Float64;
+                                  fi_st_vb::Float64=NaN,
+                                  fi_rt_vb::Float64=NaN,
+                                  sf_defaults_first::Bool=true)
 
-    if isnan(fi_sf_vb)
-        fi_sf_vb = find_full_info_vb(jf.sf, jks)
+    bc = BondContract(jks.m, jks.c, jks.p)
+    if isnan(fi_st_vb)
+        fi_st_vb = find_full_info_vb(sf, bc, jks.mu_b)
     end
-    if isnan(fi_rf_vb)
-        fi_rf_vb = find_full_info_vb(jf.rf, jks)
+    
+    if isnan(fi_rt_vb)
+        fi_rt_vb = find_full_info_vb(rf, bc, jks.mu_b)
     end
 
-    sf_vb, rf_vb = get_type_contingent_vbs(vbl, fi_sf_vb, fi_rf_vb;
+    st_vb, rt_vb = get_type_contingent_vbs(vbl, fi_st_vb, fi_rt_vb;
                                            sf_defaults_first=sf_defaults_first)
-    
+
+
     # Run Equity Finite Differences Method
-    df = joint_eq_fd(jf; jks=jks,
-                     fi_sf_vb=fi_sf_vb,
-                     fi_rf_vb=fi_rf_vb,
-                     sf_vb=sf_vb,
-                     rf_vb=rf_vb)
-    
+    df = joint_eq_fd(sf, rf, jks;
+                     fi_st_vb=fi_st_vb,
+                     fi_rt_vb=fi_rt_vb,
+                     st_vb=st_vb,
+                     rt_vb=rt_vb,
+                     vbl=vbl)
+   
 
     # Store Results
-    res = Dict{Symbol, Float64}(:fi_sf_vb => df[1, :fi_vb],
-                                :fi_rf_vb => df[2, :fi_vb],
-                                :sf_vb => df[1, :sf_vb],
-                                :rf_vb => df[2, :rf_vb],
+    res = Dict{Symbol, Float64}(:fi_st_vb => df[1, :fi_vb],
+                                :fi_rt_vb => df[2, :fi_vb],
+                                :st_vb => df[1, :st_vb],
+                                :rt_vb => df[2, :rt_vb],
                                 :vbl => df[1, :vb])
     for x in [:eq_deriv, :eq_deriv_min_val, :eq_min_val]
         res[Symbol(:sf_, x)] = df[1, x]
@@ -1980,10 +1831,11 @@ function joint_vb_extract_results(jf, jks,
     return res
 end
 
-function compute_joint_eq_vb_results(jf, jks;
+
+function compute_joint_eq_vb_results(sf, rf, jks;
                                      rerun_fi_vb::Bool=false,
-                                     fi_sf_vb::Float64=NaN,
-                                     fi_rf_vb::Float64=NaN,
+                                     fi_st_vb::Float64=NaN,
+                                     fi_rt_vb::Float64=NaN,
                                      lb1::Float64=.75,
                                      ub1::Float64=1.25,
                                      vbN1::Int64=20,
@@ -1992,42 +1844,34 @@ function compute_joint_eq_vb_results(jf, jks;
                                      vbN2::Int64=20,
                                      lb2::Float64=.9, ub2::Float64=1.1)
 
-    # Full Information: fi_sf_vb, fi_rf_vb
-    jks = set_full_information_vb!(jf, jks;
-                                   rerun_fi_vb=rerun_fi_vb,
-                                   fi_sf_vb=fi_sf_vb,
-                                   fi_rf_vb=fi_rf_vb,
-                                   lb=lb1, ub=ub1,
-                                   vbN=vbN1)
-
-    
+   
     # Set vbl bounds and form vbl grid ######################################
     s_vbh = NaN
-    if get_obj_model(jf.sf) == "svm"
-        s_vbh = get_cvm_vb(jf.sf, jf.sf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+    if get_obj_model(sf) == "svm"
+        s_vbh = get_cvm_vb(sf, sf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
     end
     
     r_vbh = NaN
-    if get_obj_model(jf.rf) == "svm"
-        r_vbh = get_cvm_vb(jf.rf, jf.rf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+    if get_obj_model(rf) == "svm"
+        r_vbh = get_cvm_vb(rf, rf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
     end
 
     if .&(isnan(s_vbh), isnan(r_vbh))
-        s_vbh = get_cvm_vb(jf.sf, jf.sf.pm.sigmal; mu_b=jks.mu_b, c=jks.c, p=jks.p)
-        r_vbh = get_cvm_vb(jf.rf, jf.rf.pm.sigmal; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+        s_vbh = get_cvm_vb(sf, sf.pm.sigmal; mu_b=jks.mu_b, c=jks.c, p=jks.p)
+        r_vbh = get_cvm_vb(rf, rf.pm.sigmal; mu_b=jks.mu_b, c=jks.c, p=jks.p)
     end
     vbh_max = maximum([x for x in [s_vbh, r_vbh] if !isnan(x)])
     vbh_min = minimum([x for x in [s_vbh, r_vbh] if !isnan(x)])
     
     # Form Grid of VB candidates
-    vbl_min = minimum(x -> isnan(x) ? Inf : x, [jks.fi_sf_vb, jks.fi_rf_vb, vbl_min])
-    vbl_max = maximum(x -> isnan(x) ? -Inf : x, [jks.fi_sf_vb, jks.fi_rf_vb, vbl_max])
+    vbl_min = minimum(x -> isnan(x) ? Inf : x, [jks.fi_st_vb, jks.fi_rt_vb, vbl_min])
+    vbl_max = maximum(x -> isnan(x) ? -Inf : x, [jks.fi_st_vb, jks.fi_rt_vb, vbl_max])
 
     # vbh_max / vbl_min < jf.rf.bi.vbhlmax
-    vbl_min = maximum([lb2 * vbl_min, vbh_max/ jf.rf.bi.vbhlmax])
+    vbl_min = maximum([lb2 * vbl_min, vbh_max/ rf.bi.vbhlmax])
 
     # vbh_min / vbl_max > jf.rf.bi.vbhlmin
-    vbl_max = minimum([ub2 * vbl_max, vbh_min/ jf.rf.bi.vbhlmin])
+    vbl_max = minimum([ub2 * vbl_max, vbh_min/ rf.bi.vbhlmin])
     
     # Form vbl grid
     vbl_grid = range(vbl_min, stop= vbl_max, length=vbN2)
@@ -2036,9 +1880,9 @@ function compute_joint_eq_vb_results(jf, jks;
 
     # ####################################################################
     # Compute Joint Equity Finite Differences Method
-    sf_res = fetch(@spawn [joint_vb_extract_results(jf, jks, vbl;
-                                                    fi_sf_vb=jks.fi_sf_vb,
-                                                    fi_rf_vb=jks.fi_rf_vb,
+    sf_res = fetch(@spawn [joint_vb_extract_results(sf, rf, jks, vbl;
+                                                    fi_st_vb=jks.fi_st_vb,
+                                                    fi_rt_vb=jks.fi_rt_vb,
                                                     sf_defaults_first=true)
                            for vbl in vbl_grid])
 
@@ -2046,9 +1890,9 @@ function compute_joint_eq_vb_results(jf, jks;
     sf_resdf = vcat([DataFrame(x) for x in sf_res]...)
 
     # Risky Firm
-    rf_res = fetch(@spawn [joint_vb_extract_results(jf, jks, vbl;
-                                                    fi_sf_vb=jks.fi_sf_vb,
-                                                    fi_rf_vb=jks.fi_rf_vb,
+    rf_res = fetch(@spawn [joint_vb_extract_results(sf, rf, jks, vbl;
+                                                    fi_st_vb=jks.fi_st_vb,
+                                                    fi_rt_vb=jks.fi_rt_vb,
                                                     sf_defaults_first=false)
                            for vbl in vbl_grid])
     # Collect Results
@@ -2057,79 +1901,53 @@ function compute_joint_eq_vb_results(jf, jks;
 
     return sf_resdf, rf_resdf
     # ####################################################################
-
-    
-    # # Compute Joint Equity Finite Differences Method
-    # res = fetch(@spawn [joint_vb_extract_results(jf, jks, vbl;
-    #                                              fi_sf_vb=jks.fi_sf_vb,
-    #                                              fi_rf_vb=jks.fi_rf_vb)
-    #                     for vbl in vbl_grid])
-    # # Collect Results
-    # resdf = vcat([DataFrame(x) for x in res]...)
-
-    # # Extract Unique VB Values
-    # resdf[:uniq_vb] = Array(resdf[:vbl])
-    # cond = resdf[:vbl] .== resdf[:fi_sf_vb]
-    # resdf[cond, :uniq_vb] = resdf[cond, :rf_vb]
-    
-    # # Sort Columns
-    # cols = [:fi_rf_vb, :fi_sf_vb,
-    #         :sf_vb, :rf_vb,
-    #         :vbl, :uniq_vb,
-    #         :rf_eq_deriv, :sf_eq_deriv,     
-    #         :rf_eq_deriv_min_val, :sf_eq_deriv_min_val,
-    #         :rf_eq_min_val, :sf_eq_min_val]
-    
-    # return resdf[cols]
 end
 
 
-function compile_opt_vb_results(jf, jks, sfdf::DataFrame, rfdf::DataFrame)
+function compile_opt_vb_results(sf, rf, jks, sfdf::DataFrame, rfdf::DataFrame)
 
     # Case 1: Safe Firm defaults first! ############################
-    opt_sf_vb, opt_rf_vb = interp_optimal_vbs(jf, jks, sfdf)
+    opt_st_vb, opt_rt_vb = interp_optimal_vbs(jks, sfdf)
 
     # vbl that sets E'_s(vbl) to zero
-    sf_vb, rf_vb = get_type_contingent_vbs(opt_sf_vb,
-                                           jks.fi_sf_vb,
-                                           jks.fi_rf_vb; 
+    st_vb, rt_vb = get_type_contingent_vbs(opt_st_vb,
+                                           jks.fi_st_vb,
+                                           jks.fi_rt_vb; 
                                            sf_defaults_first=true)
-    s1 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    s1 = joint_eq_fd(sf, rf, jks, st_vb=st_vb, rt_vb=rt_vb)
 
 
     # vbl that sets E'_r(vbl) to zero
-    sf_vb, rf_vb = get_type_contingent_vbs(opt_rf_vb,
-                                           jks.fi_sf_vb,
-                                           jks.fi_rf_vb; 
+    st_vb, rt_vb = get_type_contingent_vbs(opt_rt_vb,
+                                           jks.fi_st_vb,
+                                           jks.fi_rt_vb; 
                                            sf_defaults_first=true)
-    s2 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    s2 = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
     
     # sfdf = vcat([s1, s2]...)
     # ###############################################################
 
     # Case 2: Risky Firm defaults first! ############################
-    opt_sf_vb, opt_rf_vb = interp_optimal_vbs(jf, jks, rfdf)
+    opt_st_vb, opt_rt_vb = interp_optimal_vbs(jks, rfdf)
 
     # vbl that sets E'_s(vbl) to zero
-    sf_vb, rf_vb = get_type_contingent_vbs(opt_sf_vb,
-                                           jks.fi_sf_vb,
-                                           jks.fi_rf_vb; 
+    st_vb, rt_vb = get_type_contingent_vbs(opt_st_vb,
+                                           jks.fi_st_vb,
+                                           jks.fi_rt_vb; 
                                            sf_defaults_first=false)   
-    r1 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
+    r1 = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
 
     # vbl that sets E'_r(vbl) to zero   
-    sf_vb, rf_vb = get_type_contingent_vbs(opt_rf_vb,
-                                           jks.fi_sf_vb,
-                                           jks.fi_rf_vb; 
+    st_vb, rt_vb = get_type_contingent_vbs(opt_rt_vb,
+                                           jks.fi_st_vb,
+                                           jks.fi_rt_vb; 
                                            sf_defaults_first=false)
-    r2 = joint_eq_fd(jf; jks=jks, sf_vb=sf_vb, rf_vb=rf_vb)
-    if abs.(r2[isnan.(r2[:, :sf_vb]), :eq_deriv][1]) > 1e-2
-        r2 = refine_contingent_vbs(jf, jks, sf_vb, rf_vb)
+    r2 = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
+    if abs.(r2[isnan.(r2[:, :st_vb]), :eq_deriv][1]) > 1e-2
+        r2 = refine_contingent_vbs(sf, rf, jks, st_vb, rt_vb)
     end
     # ###############################################################
-    # println("=====================================================")
-    # println("=====================================================")
-    # println(r2)
+    
     println("=====================================================")
     println("=====================================================")
     # Compile Results
@@ -2138,7 +1956,7 @@ function compile_opt_vb_results(jf, jks, sfdf::DataFrame, rfdf::DataFrame)
     df[!, :sf_defaults_first] .= vcat([fill(true, 4), fill(false, 4)]...)
 
     cols1 = [:sf_defaults_first,
-             :fi_vb, :sf_vb, :rf_vb, :vb,
+             :fi_vb, :st_vb, :rt_vb, :vb,
              :eq_deriv, :eq_min_val]
     return df[:, vcat(cols1, [x for x in names(df) if !(x in cols1)]...)]
 end
@@ -2154,25 +1972,19 @@ function filter_joint_vb_results(df::DataFrame;
     # its equity and equity derivative should be zero
     # at the joint default barrier
     sf_cond = df -> .&(df[:, :sf_defaults_first], 
-                       isnan.(df[:, :sf_vb]) .| (df[:, :eq_deriv] .<= tol2))
+                       isnan.(df[:, :st_vb]) .| (df[:, :eq_deriv] .<= tol2))
 
     # When the Risky Firm defaults first, 
     # its equity and equity derivative should be zero
     # at the joint default barrier
     rf_cond = df -> .&(df[:, :sf_defaults_first] .==false, 
-                       isnan.(df[:, :rf_vb]) .| (df[:, :eq_deriv] .<= tol2))
+                       isnan.(df[:, :rt_vb]) .| (df[:, :eq_deriv] .<= tol2))
 
     # Limited Liability Conditions must be satisfied by both firms:
     llcond = df -> sum(.&(cond1(df), (sf_cond(df) .| rf_cond(df)))) == 2
     # #########################################################
 
     ## Find vb candidates
-    # vbdf = by(df, :vb, llcond = names(df) => x -> llcond(x))
-    # vblist = vbdf[vbdf[:, :llcond], :vb]
-    # Filter DataFrame
-    # if !isempty(vblist)
-    #     return df[in.(df[:, :vb], vblist), :]
-    
     LL = []
     for x in groupby(df, [:vb, :sf_defaults_first])
         if llcond(x)
@@ -2189,12 +2001,12 @@ function filter_joint_vb_results(df::DataFrame;
 end    
 
 
-function find_joint_optimal_vb(jf, jks;
+function find_joint_optimal_vb(sf, rf, jks;
                                mu_s::Float64=NaN,
                                mu_b::Float64=NaN,
                                rerun_fi_vb::Bool=true,
-                               fi_sf_vb::Float64=NaN,
-                               fi_rf_vb::Float64=NaN,
+                               fi_st_vb::Float64=NaN,
+                               fi_rt_vb::Float64=NaN,
                                lb1::Float64=.75,
                                ub1::Float64=1.25,
                                vbN1::Int64=20,
@@ -2215,25 +2027,26 @@ function find_joint_optimal_vb(jf, jks;
         setfield!(jks, :mu_b, mu_b)
     end
 
+    
     # Set Full Information VBs
-    if any([isnan(jks.fi_sf_vb),
-            isnan(jks.fi_rf_vb),
+    if any([isnan(jks.fi_st_vb),
+            isnan(jks.fi_rt_vb),
             rerun_fi_vb])
 
-        # Full Information: fi_sf_vb, fi_rf_vb
-        jks = set_full_information_vb!(jf, jks;
+        # Full Information: fi_st_vb, fi_rt_vb
+        jks = set_full_information_vb!(sf, rf, jks;
                                        rerun_fi_vb=rerun_fi_vb,
-                                       fi_sf_vb=fi_sf_vb,
-                                       fi_rf_vb=fi_rf_vb,
+                                       fi_st_vb=fi_st_vb,
+                                       fi_rt_vb=fi_rt_vb,
                                        lb=lb1, ub=ub1,
                                        vbN=vbN1)
     end
 
     # Compute Equity Finite Differences Method
-    sfdf, rfdf = compute_joint_eq_vb_results(jf, jks;
+    sfdf, rfdf = compute_joint_eq_vb_results(sf, rf, jks;
                                              rerun_fi_vb=rerun_fi_vb,
-                                             fi_sf_vb=jks.fi_sf_vb,
-                                             fi_rf_vb=jks.fi_rf_vb,
+                                             fi_st_vb=jks.fi_st_vb,
+                                             fi_rt_vb=jks.fi_rt_vb,
                                              lb1=lb1, ub1=ub1,
                                              vbN1=vbN1,
                                              vbl_min=vbl_min,
@@ -2242,16 +2055,17 @@ function find_joint_optimal_vb(jf, jks;
                                              lb2=lb2, ub2=ub2)
 
     # Get Candidates
-    df = compile_opt_vb_results(jf, jks, sfdf, rfdf)
+    df = compile_opt_vb_results(sf, rf, jks, sfdf, rfdf)
 
     # Filter to Back out optimal vb
     return filter_joint_vb_results(df)
 end
 
 
-# ** Joint Leverage Functions
+# ** Joint Leverage Functions - Adjusted
 # include("_joint_equilibrium/_joint_leverage_functions.jl")
-function find_joint_payoffs(jf, jks, mu_b_grid;
+function find_joint_payoffs(sf, rf, jks,
+                            mu_b_grid::Array{Float64,1};
                             sf_obj_fun::Symbol=:firm_value,
                             rf_obj_fun::Symbol=:MBR,
                             spline_k::Int64=3,
@@ -2259,20 +2073,19 @@ function find_joint_payoffs(jf, jks, mu_b_grid;
                             N::Int64=10^5)
 
 
-    dfl = @time fetch(@spawn [find_joint_optimal_vb(jf, jks;
+    dfl = @time fetch(@spawn [find_joint_optimal_vb(sf, rf, jks;
                                                     mu_b=mu_b,
                                                     rerun_fi_vb=true)
                               for mu_b in mu_b_grid])
     
     # Store results in a DataFrame
     df = vcat(dfl...)
-    sf_df = df[isnan.(df[:rf_vb]), :]
-    rf_df = df[isnan.(df[:sf_vb]), :]
-    
+    sf_df = df[isnan.(df[:, :rt_vb]), :]
+    rf_df = df[isnan.(df[:, :st_vb]), :]
     
     # Interpolate Objective Functions in mu_b ################################
-    sf_objf = Dierckx.Spline1D(sf_df[:mu_b], sf_df[sf_obj_fun]; k=spline_k, bc=spline_bc)
-    rf_objf = Dierckx.Spline1D(rf_df[:mu_b], rf_df[rf_obj_fun]; k=spline_k, bc=spline_bc)
+    sf_objf = Dierckx.Spline1D(sf_df[:, :mu_b], sf_df[:, sf_obj_fun]; k=spline_k, bc=spline_bc)
+    rf_objf = Dierckx.Spline1D(rf_df[:, :mu_b], rf_df[:, rf_obj_fun]; k=spline_k, bc=spline_bc)
 
     # Refine mu_b_grid
     ref_mu_b_grid = range(minimum(mu_b_grid), stop=maximum(mu_b_grid), length=N)
@@ -2281,18 +2094,13 @@ function find_joint_payoffs(jf, jks, mu_b_grid;
 end
 
 
-
-
 function find_mu_b_intervals(ref_mu_b_grid::StepRangeLen{Float64,
                                                          Base.TwicePrecision{Float64},
                                                          Base.TwicePrecision{Float64}},
                              cond::BitArray{1}; N::Int64=20)
-    #ma = ref_mu_b_grid[cond]
-    #md = abs.(ma[2:end] - ma[1:end-1])
+    
     mu_b_discarded = ref_mu_b_grid[cond .== false]
     
-   
-    #maximum(md) - sum(md)/size(md, 1) < 1e-6
     mu_b_dis_min = minimum(mu_b_discarded)
     mu_b_dis_max = maximum(mu_b_discarded)
 
@@ -2304,11 +2112,6 @@ function find_mu_b_intervals(ref_mu_b_grid::StepRangeLen{Float64,
                                      length=N)
         filtered_mu_b_grid_2 = range(0, stop=0, length=0)
     else
-        # int1_up  = ref_mu_b_grid[argmax(md) + 1]
-        # int2_down = reverse(ref_mu_b_grid)[argmax(reverse(md)) + 1]
-        # filtered_mu_b_grid_1 = range(minimum(mu_b_grid), stop=int1_up, length=10)
-        # filtered_mu_b_grid_2 = range(int2_down, stop=maximum(mu_b_grid), length=10)
-        
         # In case there are two intervals:
         filtered_mu_b_grid_1 = range(minimum(ref_mu_b_grid[cond]),
                                      stop=minimum(mu_b_discarded),
@@ -2341,44 +2144,29 @@ function find_opt_mu_b(sf_objf,
         
         return maximum([mu_b_opt_1, mu_b_opt_2])
     end
-        
-        
 end
 
 
-    # # Now compute payoffs for the safe firm 
-    # s_eqdf_list = fetch(@spawn [sep_eq_fd(jf.sf, deepcopy(jks), mu_b) 
-    #                             for mu_b in filtered_mu_b_grid])
-    # sf_df = vcat(s_eqdf_list...)
-
-    # sf_objf = Dierckx.Spline1D(sf_df[:mu_b], sf_df[sf_obj_fun]; k=spline_k, bc=spline_bc)
-    
-    # # Maximize Safe Firm's Objective Function
-    # ref_mu_b_grid = range(minimum(filtered_mu_b_grid),
-    #                         stop=maximum(filtered_mu_b_grid), length=N2)
-    # mu_b_opt = ref_mu_b_grid[argmax(sf_objf(ref_mu_b_grid))]
-
-
-function sep_eq_fd(sf, jks, mu_b::Float64)
-    sf_vb = find_full_info_vb(sf, jks; mu_b=mu_b)
-    return eq_fd(sf, vbl=sf_vb, 
+function sep_eq_fd(fr, jks, mu_b::Float64)
+    fr_vb = find_full_info_vb(fr, jks; mu_b=mu_b)
+    return eq_fd(fr, vbl=fr_vb, 
                  mu_b=mu_b, m=jks.m, 
                  c=jks.c, p=jks.p)
     
 end
 
 
-function separate_eq_calculator(jf, jks, mu_b_opt::Float64, fi_rf_mu_b::Float64)
-    s_eqdf = sep_eq_fd(jf.sf, deepcopy(jks), mu_b_opt)
-    r_eqdf = sep_eq_fd(jf.rf, deepcopy(jks), fi_rf_mu_b)
+function separate_eq_calculator(sf, rf, jks, mu_b_opt::Float64, fi_rf_mu_b::Float64)
+    s_eqdf = sep_eq_fd(sf, deepcopy(jks), mu_b_opt)
+    r_eqdf = sep_eq_fd(rf, deepcopy(jks), fi_rf_mu_b)
 
     s_eqdf[:fi_vb] = s_eqdf[1, :vb]
-    s_eqdf[:sf_vb] = s_eqdf[1, :vb]
-    s_eqdf[:rf_vb] = NaN
+    s_eqdf[:st_vb] = s_eqdf[1, :vb]
+    s_eqdf[:rt_vb] = NaN
     
     r_eqdf[:fi_vb] = r_eqdf[1, :vb]
-    r_eqdf[:sf_vb] = NaN 
-    r_eqdf[:rf_vb] = r_eqdf[1, :vb]
+    r_eqdf[:st_vb] = NaN 
+    r_eqdf[:rt_vb] = r_eqdf[1, :vb]
 
     eqdf = vcat(s_eqdf, r_eqdf)
     eqdf[:sf_defaults_first] = s_eqdf[1, :vb] > r_eqdf[1, :vb]
@@ -2389,9 +2177,10 @@ function separate_eq_calculator(jf, jks, mu_b_opt::Float64, fi_rf_mu_b::Float64)
 end
 
 
-# ** Joint Optimal Bond Measure
+# ** Joint Optimal Bond Measure - Adjusted
 # include("_joint_equilibrium/_joint_optimal_bond_measure.jl")
-function get_pool_eqdf(jf, jks, mu_b_grid,
+function get_pool_eqdf(sf, rf, jks,
+                       mu_b_grid::Array{Float64, 1},
                        fi_rf_obj_val::Float64;
                        sf_obj_fun::Symbol=:firm_value,
                        rf_obj_fun::Symbol=:MBR,
@@ -2400,7 +2189,7 @@ function get_pool_eqdf(jf, jks, mu_b_grid,
                        N1::Int64=20,
                        N2::Int64=10^5)
 
-    sf_objf, rf_objf, ref_mu_b_grid = find_joint_payoffs(jf, jks, mu_b_grid;
+    sf_objf, rf_objf, ref_mu_b_grid = find_joint_payoffs(sf, rf, jks, mu_b_grid;
                                                          sf_obj_fun=sf_obj_fun,
                                                          rf_obj_fun=rf_obj_fun,
                                                          spline_k=spline_k,
@@ -2418,13 +2207,13 @@ function get_pool_eqdf(jf, jks, mu_b_grid,
                              filtered_mu_b_grid_2)
     
     # Compute Results
-    return find_joint_optimal_vb(jf, jks;
+    return find_joint_optimal_vb(sf, rf, jks;
                                  mu_b=mu_b_opt, rerun_fi_vb=true)
 end
 
 
-
-function get_sep_eqdf(jf, jks, mu_b_grid,
+function get_sep_eqdf(sf, rf, jks,
+                      mu_b_grid::Array{Float64, 1},
                       fi_rf_mu_b::Float64,
                       fi_rf_obj_val::Float64;
                       sf_obj_fun::Symbol=:firm_value,
@@ -2437,7 +2226,7 @@ function get_sep_eqdf(jf, jks, mu_b_grid,
     # Compute the Payoffs in case of Misrepresentation
     sep_misrep_jks = deepcopy(jks)
     sep_misrep_jks.mu_s = 1.
-    sf_objf, rf_objf, ref_mu_b_grid = find_joint_payoffs(jf, sep_misrep_jks,
+    sf_objf, rf_objf, ref_mu_b_grid = find_joint_payoffs(sf, rf, sep_misrep_jks,
                                                          mu_b_grid;
                                                          sf_obj_fun=sf_obj_fun,
                                                          rf_obj_fun=rf_obj_fun,
@@ -2462,13 +2251,13 @@ function get_sep_eqdf(jf, jks, mu_b_grid,
     
 
     # Compute Separating Eq. Payoffs
-    eqdf = separate_eq_calculator(jf, jks, mu_b_opt, fi_rf_mu_b)
+    eqdf = separate_eq_calculator(sf, rf, jks, mu_b_opt, fi_rf_mu_b)
 
     return eqdf
 end
 
 
-function find_joint_optimal_bond_measure(jf, jks,
+function find_joint_optimal_bond_measure(sf, rf, jks,
                                          fi_sf_mu_b::Float64,
                                          fi_rf_mu_b::Float64,
                                          fi_rf_obj_val::Float64;
@@ -2509,15 +2298,15 @@ function find_joint_optimal_bond_measure(jf, jks,
     for eq_type in eq_types
         # Find optimal mu_b values 
         if eq_type == "pooling"
-            eqdf = get_pool_eqdf(jf, jks2, mu_b_grid,
-                                 fi_rf_obj_val;
+            eqdf = get_pool_eqdf(sf, rf, jks2,
+                                 mu_b_grid, fi_rf_obj_val;
                                  sf_obj_fun=sf_obj_fun,
                                  rf_obj_fun=rf_obj_fun,
                                  N1=mu_bN,
                                  N2=mu_bN2)
             
         elseif eq_type == "separating" 
-            eqdf = get_sep_eqdf(jf, jks2, mu_b_grid,
+            eqdf = get_sep_eqdf(sf, rf, jks2, mu_b_grid,
                                 fi_rf_mu_b, fi_rf_obj_val;
                                 sf_obj_fun=sf_obj_fun,
                                 rf_obj_fun=rf_obj_fun,
