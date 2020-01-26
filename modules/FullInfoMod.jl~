@@ -1,0 +1,72 @@
+module_path = "/home/artur/BondPricing/Julia/modules/"
+push!(LOAD_PATH, module_path)
+
+module FullInfoMod
+
+using Printf
+using DataFrames
+using CSV
+using Dates
+
+using Batch: dfcols
+
+using FullInfoEq: find_optimal_bond_measure,
+                  JointKStruct
+
+using JointEq: JointFirms, store_ep_params
+
+
+
+
+# * Optimal Bond Measure
+
+
+
+# * Full Information Equilibrium Functions
+function recompute_fi(jf, df::DataFrame, ft::Symbol, rmp::Symbol, ep_jks)
+    cond = .&(df[:, :type] .== ft, df[:, :rmp] .== rmp)
+    fv(df) = .&(!isempty(df), :firm_value in names(df)) ? df[1, :firm_value] : NaN
+    tmp = df[cond, :]
+    
+    fr = getfield(getfield(jf, ft), rmp).fr
+    if .&(isnan(fv(tmp)), !isnothing(fr))
+        tmp = find_optimal_bond_measure(fr, jf.bc; jks=ep_jks)
+        tmp[!, :eq_type] .= :full_info
+        tmp[!, :datetime] .= Dates.now()
+        tmp[!, :type] .= ft
+        tmp[!, :rmp] .= rmp
+        df = vcat([df[cond .== false, :], tmp]...)
+    end
+        
+    return df
+end
+
+
+function get_fi_results(jf, fi_fpath_name::String;
+                        rerun_full_info::Bool=false)
+    
+    # Measure of Firms and Standardized Bond
+    ep_jks = store_ep_params(NaN;
+                             ep_m=jf.bc.m,
+                             ep_c=jf.bc.c,
+                             ep_p=jf.bc.p)
+
+    # fi_fpath_name = isempty(fi_fpath_name) ? : fi_fpath_name
+    rerun_full_info = !isfile(fi_fpath_name) ? true : rerun_full_info
+
+    # if  .&(isfile(fi_fpath_name), !rerun_full_info)
+    #     fidf = extract_fi_results(jf, CSV.read(fi_fpath_name))
+    # end
+    fidf = extract_fi_results(jf, CSV.read(fi_fpath_name))
+    
+    if rerun_full_info
+        for ft in [:st, :rt], rmp in [:rm, :nrm]
+            fidf = recompute_fi(jf, fidf, ft, rmp, ep_jks)
+        end
+    end
+    
+    return fidf
+end
+    
+
+end

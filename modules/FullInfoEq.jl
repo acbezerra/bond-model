@@ -30,8 +30,11 @@ using EqFinDiff: eq_fd
 using Batch: interp_values, dfcols
 
 # using JointEq: JointKStruct
-using JointEqStructs: BondContract, JointFirms,
-                      JointKStruct, type_fun
+using JointEqStructs: BondContract,
+                      JointFirms,
+                      JointKStruct,
+                      type_fun,
+                      get_empty_df
 
 # * Containers
 types_order = vcat([Symbol(x, :_, y) for x in [:st, :rt], 
@@ -39,8 +42,6 @@ types_order = vcat([Symbol(x, :_, y) for x in [:st, :rt],
 
 types_names = [:iota, :lambda, :sigmah]
 cp_names = [:V0, :alpha, :gross_delta, :pi, :r, :xi, :sigmal]
-fi_df_names =  vcat([x for x in dfcols if !occursin("diff", String(x))],
-                    [:eq_type, :datetime, :type, :rmp])
 
 typeval = Dict{DataType, Any}(Float64 => NaN,
                               Bool => false,
@@ -63,12 +64,6 @@ function get_types_comb_df(types_dict::Dict{Symbol, Array{Float64, N} where N})
     df[!, :pair_num] .= 1:size(df, 1)
     
     return df
-end
-
-
-function get_empty_fidf(; col_names::Array{Symbol,1}=fi_df_names)
-    tmp = [eval(type_fun(x)[]) for x in fi_df_names]
-    return DataFrame(tmp, fi_df_names)
 end
 
 
@@ -411,7 +406,7 @@ function get_fi_results(jf, fi_fpath_name::String;
     if .&(isfile(fi_fpath_name), !rerun_full_info)
         fidf = extract_fi_results(jf, CSV.read(fi_fpath_name))
     else
-        fidf=get_empty_fidf()
+        fidf=get_empty_fidf(:fi)
         rerun_full_info = true
     end
     
@@ -430,10 +425,10 @@ end
 
 
 function get_fi_eq(jf; fidf::DataFrame=DataFrame())
-    fidf = isempty(fidf) ? get_empty_fidf() : fidf
-    fieqdf = get_empty_fidf()
+    fieqdf = get_empty_df(:fi)
+    fidf = isempty(fidf) ? deepcopy(fieqdf) : fidf
     for ft in [:st, :rt]
-        tmp = fidf[fidf[:, :type] .== ft, :]
+        tmp = fidf[Symbol.(fidf[:, :type]) .== ft, :]
         if size(tmp, 1) < 1
             for rmp in [:rm, :nrm]
                 tmp = compute_fi_eq(jf, tmp, ft, rmp)
