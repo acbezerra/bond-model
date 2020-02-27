@@ -170,7 +170,7 @@ eq_type_dict = Dict{String, Dict{Symbol, String}}(
                                        :fn_prefix =>  "misrep"),
     "pooling" => Dict{Symbol, String}(:dfn => string("z", pooldf_name),
                                      :fn_prefix => "pool"),
-    "separating" => Dict{Symbol, String}(:dfn => sepdf_name,
+    "separating" => Dict{Symbol, String}(:dfn => string("z", sepdf_name),
                                         :fn_prefix => "sep"))
 
 dup_rows_params = [:eq_type, :kappa, :mu_s, 
@@ -228,10 +228,63 @@ jks_eq_fd_cols = vcat(jks_cols, vb_cols, share_cols, param_cols)
 
 extra_cols = [:eq_type, :datetime, :type, :rmp]
 
+rmp_param_cols = [:rm_iota, :nrm_lambda, :nrm_sigmah]
+jeq_rmp_param_cols = vcat([Symbol(x, :_, y) for y in rmp_param_cols, x in [:s, :r]]...)
+
+
 # fi_df_names =  vcat([x for x in dfcols if !occursin("diff", String(x))],
 #                     [:eq_type, :datetime, :type, :rmp])
 # misrep_df_names = vcat([unique(vcat([fi_df_names, jks_eq_fd_cols]...)),
 #                         [:sf_defaults_first, :misrep_type]]...)
+
+
+function get_type_identifiers(jf, ft::Symbol)
+
+    if !(ft in [:st, :rt])
+        println(string("Wrong type of argument. Firm type (ft) must be :st or :rt",
+                       "\n Exiting..."))
+        return
+    end
+   
+    rm_iota = 0.0
+    fr = getfield(getfield(jf, ft), :rm).fr
+    if !isnothing(fr)
+        rm_iota = fr.pm.iota
+    end
+
+    # No Risk Management
+    nrm_lambda = NaN
+    nrm_sigmah = NaN
+        
+    fr = getfield(getfield(jf, ft), :nrm).fr
+    if !isnothing(fr)
+        nrm_lambda = fr.pm.lambda
+        nrm_sigmah = fr.pm.sigmah
+    end
+
+    return Dict{Symbol, Float64}(:rm_iota => rm_iota,
+                                 :nrm_lambda => nrm_lambda,
+                                 :nrm_sigmah => nrm_sigmah)
+end
+
+
+function get_joint_identifiers(jf)
+    dd = Dict{Symbol, Float64}()
+    for ft in [:st, :rt]
+        # Type Prefix
+        tp = ft == :st ? :s_ : :r_
+
+        # Get Parameters
+        pd = get_type_identifiers(jf, ft)
+        
+        dd[Symbol(tp, :rm_iota)] = pd[:rm_iota]
+        dd[Symbol(tp, :nrm_lambda)] = pd[:nrm_lambda]
+        dd[Symbol(tp, :nrm_sigmah)] = pd[:nrm_sigmah]
+    end
+    
+    return dd
+end
+
 
 function form_cols_lists(dfnames::Array{Symbol, 1};
                          svm::Bool=true,
@@ -249,6 +302,8 @@ function form_cols_lists(dfnames::Array{Symbol, 1};
     # Extra and Excluded Columns ################
     extra_cols = [:datetime, :eq_type, epmcols...]
     excluded_cols = [:type]
+
+    rmp_cols = rmp_param_cols
     if eq_type != :full_info
         extra_cols = vcat(extra_cols, :sf_defaults_first)
         excluded_cols = vcat(excluded_cols, :vb)
@@ -256,9 +311,11 @@ function form_cols_lists(dfnames::Array{Symbol, 1};
 
     if eq_type == :misrep
         extra_cols = vcat(extra_cols, :misrep_type)
-    elseif eq_type == :pool
+        rmp_cols = jeq_rmp_param_cols
+    elseif eq_type in [:pool, :pooling, :sep, :separating]
         jeq_cols = [:misrep_type, :misrep_ic_objf, :misrep_ic_objf_val, :jeq_objf]
         extra_cols = vcat(extra_cols, jeq_cols)
+        rmp_cols = jeq_rmp_param_cols
     end
 
     # ###########################################   
@@ -267,12 +324,14 @@ function form_cols_lists(dfnames::Array{Symbol, 1};
     specific_cols = [col for col in dfnames if 
                      !(col in vcat(excluded_cols,
                                    extra_cols,
-                                   common_cols))]
+                                   common_cols,
+                                   rmp_cols))]
 
     return Dict{Symbol, Array{Symbol, 1}}(:common_cols => common_cols,
                                           :extra_cols => extra_cols,
                                           :excluded_cols => excluded_cols,
-                                          :specific_cols => specific_cols)
+                                          :specific_cols => specific_cols,
+                                          :rmp_cols => rmp_cols)
 end
 
 
@@ -284,7 +343,9 @@ function type_fun(x::Symbol)
     elseif occursin("time", String(x))
         return DateTime
     elseif any([occursin("type", String(x)),
-                occursin("rmp", String(x))])
+                occursin("rmp", String(x)),
+                String(x) == "jeq_objf",
+                String(x) == "misrep_ic_objf"])
         return Symbol
     end
     
@@ -299,10 +360,20 @@ function get_df_cols_types(eqtype::Symbol; svm::Bool=true)
     colsl = Array{Symbol,1}()
     if eqtype in [:fi, :full_info]
         excluded_cols = [:mu_s, :fi_vb, :st_vb, :rt_vb]
+        all_cols = vcat(all_cols, rmp_param_cols)
         colsl = [x for x in all_cols if !(x in excluded_cols)]
-    elseif eqtype == :misrep
-        excluded_cols = [:mu_s]
-        tmp = Array{Symbol, 1}([x for x in all_cols if !(x in excluded_cols)])                     
+    else
+        if eqtype == :misrep
+            excluded_cols = [:mu_s]
+            jeq_cols = [] 
+        else
+            excluded_cols = []
+            jeq_cols = [:jeq_objf, :misrep_ic_objf,
+                        :misrep_ic_objf_val]
+        end
+
+        tmp = Array{Symbol, 1}([x for x in all_cols if
+                                !(x in excluded_cols)])                     
         colsd = form_cols_lists(tmp; svm=svm)
         renamer(ft, x) = (x in [:st_vb, :rt_vb]) ? x : Symbol(ft, :_, x)
         sfcols = [x for x in colsd[:specific_cols] if !(x == :rt_vb)]
@@ -310,7 +381,9 @@ function get_df_cols_types(eqtype::Symbol; svm::Bool=true)
         rfcols = [x for x in colsd[:specific_cols] if !(x == :st_vb)]
         rf_cols = [renamer(:r, x) for x in rfcols]
                     
-        colsl = vcat(colsd[:extra_cols], sf_cols, rf_cols, colsd[:common_cols])
+        colsl = vcat(colsd[:extra_cols], jeq_cols,
+                     sf_cols, rf_cols, colsd[:common_cols],
+                     jeq_rmp_param_cols)
     end
 
     coltypes = Dict([x => type_fun(x) for x in colsl])
@@ -347,8 +420,11 @@ function reshape_sf_rf_df(df::DataFrame; svm::Bool=true) # - ADJUSTED
     renamer(ft, x) = (x in [:st_vb, :rt_vb]) ? x : Symbol(ft, :_, x)
     rename!(sfdf, [renamer(:s, x) for x in names(sfdf)])
     rename!(rfdf, [renamer(:r, x) for x in names(rfdf)])
+
+    # RMP Cols
+    rmp_params_df = DataFrame(df[1, colsd[:rmp_cols]])
  
-    return hcat(extradf, sfdf, rfdf, commondf)
+    return hcat(extradf, sfdf, rfdf, commondf, rmp_params_df)
 end
 
 
@@ -363,36 +439,42 @@ function reshape_joint_df(df::DataFrame; svm::Bool=true)
 end
 # ###############################################################################
 
-# ** DataFramer Loaders
+# ** DataFrames Loaders
 function load_joint_eqdf(df_fpath_name::String; svm::Bool=true)
     eq_type = Symbol() 
     if occursin(eq_type_dict["full_info"][:dfn], df_fpath_name)
         eq_type = :fi
     elseif occursin(eq_type_dict["misrep"][:dfn], df_fpath_name)
         eq_type = :misrep
-    elseif occursin(eq_type_dict["pool"][:dfn], df_fpath_name)
+    elseif occursin(eq_type_dict["pooling"][:dfn], df_fpath_name)
         eq_type = :pool
-    elseif occursin(eq_type_dict["sep"][:dfn], df_fpath_name)
+    elseif occursin(eq_type_dict["separating"][:dfn], df_fpath_name)
         eq_type = :sep
     end
     
     cd = get_df_cols_types(eq_type; svm=svm)
-    symbol_cols = [x for x in keys(cd) if cd[x] == Symbol] 
+    symbol_cols = [x for x in keys(cd) if cd[x] == Symbol]
+
+    df = DataFrame()
+    if isfile(df_fpath_name)
                 
-    # Replace Symbol DataType by String
-    mcd = Dict([x => (x in symbol_cols) ? String : cd[x] for x in keys(cd)])
-    df = CSV.read(df_fpath_name, types=mcd)
+        # Replace Symbol DataType by String
+        mcd = Dict([x => (x in symbol_cols) ? String : cd[x] for x in keys(cd)])
+        df = CSV.read(df_fpath_name, types=mcd)
                 
-    # Re-Adjust Columns
-    for x in symbol_cols
-        df[!, x] = Symbol.(df[:, x])
+        # Re-Adjust Columns
+        for x in symbol_cols
+            df[!, x] = Symbol.(df[:, x])
+        end
+    else
+        println(string(eq_type), " file does not exist!")
     end
-                
+    
     return df
 end
 
 
-# ** DataFrame Results Extractor
+# ** DataFrame Parameter Matcher
 function fi_param_matcher(jf, ftype::Symbol, 
                        rmp::Symbol, df::DataFrame)
     fr = getfield(getfield(jf, ftype), rmp).fr
@@ -437,6 +519,7 @@ function misrep_param_matcher(jf, df::DataFrame;
                             svm=is_svm(jf),
                             eq_type=Symbol(df[1, :eq_type]))
     renamer(ft, x) = (x in [:st_vb, :rt_vb]) ? x : Symbol(ft, :_, x)
+    rmp_renamer(ft, x) = (x == :iota) ? Symbol(ft, :_rm_, x) : Symbol(ft, :_nrm_, x)
     
     sf = getfield(getfield(jf, :st), st_rmp).fr
     rf = getfield(getfield(jf, :rt), rt_rmp).fr
@@ -479,6 +562,7 @@ function misrep_param_matcher(jf, df::DataFrame;
                     cond = .&(cond, isnan.(df[:, renamer(ft, par)]))
                 else
                     cond = .&(cond, abs.(df[:, renamer(ft, par)] .- pv) .< 1e-5)
+                    cond = .&(cond, abs.(df[:, rmp_renamer(ft, par)] .- pv) .< 1e-5)
                 end
             end
         end
@@ -490,6 +574,79 @@ function misrep_param_matcher(jf, df::DataFrame;
 end
 
 
+function jeq_param_matcher(jf, df::DataFrame, eq_type::Symbol;
+                           st_rmp::Symbol=:rm, 
+                           rt_rmp::Symbol=:rm, 
+                           misrep_type::Symbol=:rt,
+                           jeq_objf::Symbol=:exp_firm_value,
+                           misrep_ic_objf::Symbol=:exp_firm_value,
+                           misrep_ic_objf_val::Float64=NaN)
+    
+    colsd = form_cols_lists(names(df);
+                            svm=true, #JointEqStructs.is_svm(jf),
+                            eq_type=Symbol(df[1, :eq_type]))
+    
+    renamer(ft, x) = (x in [:st_vb, :rt_vb]) ? x : Symbol(ft, :_, x)
+    
+    sf = getfield(getfield(jf, :st), st_rmp).fr
+    rf = getfield(getfield(jf, :rt), rt_rmp).fr
+    
+    cond = [.&(!isnothing(sf), !isnothing(rf)) for i in 1:size(df, 1)]
+    match = !cond[1] ? :skip : :matched
+    
+    if cond[1]
+        # RMP
+        cond = .&(cond, 
+                  Symbol.(df[:, renamer(:s,:rmp)]) .==  st_rmp,
+                  Symbol.(df[:, renamer(:r,:rmp)]) .==  rt_rmp)
+
+        # Equilibrium Type
+        cond = .&(cond, Symbol.(df[:, :eq_type]) .== eq_type)
+        
+        # Misrep Type
+        cond = .&(cond, Symbol.(df[:, :misrep_type]) .== misrep_type)
+        
+        # Bond Contract
+        for x in [:m, :c, :p]
+            cond = .&(cond, abs.(df[:, x] .- getfield(jf.bc, x)) .< 1e-5)
+        end
+            
+        # Common Parameters
+        for par in [x for x in vcat(colsd[:common_cols], :kappa)]
+            pv = getfield(sf.pm, par)
+            if isnan(pv)
+                cond = .&(cond, isnan.(df[:, par]))
+            else
+                cond = .&(cond, abs.(df[:, par] .- pv) .< 1e-5)
+            end
+        end
+        
+        # Firm Parameters
+        for fr in [sf, rf]
+            ft = (fr == sf) ? :s : :r
+            for par in [x for x in [:iota, :lambda, :sigmah]]
+                pv = getfield(fr.pm, par)
+                if isnan(pv)
+                    cond = .&(cond, isnan.(df[:, renamer(ft, par)]))
+                else
+                    cond = .&(cond, abs.(df[:, renamer(ft, par)] .- pv) .< 1e-5)
+                end
+            end
+        end
+
+        # Joint Eq Specific Columns
+        cond = .&(cond, df[:, :jeq_objf] .== jeq_objf)
+        cond = .&(cond, df[:, :misrep_ic_objf] .== misrep_ic_objf)
+        cond = .&(cond, abs.(df[:, :misrep_ic_objf_val] .- misrep_ic_objf_val) .< 1e-5)
+
+        match = sum(cond) == 0 ? :unmatched : match
+    end
+
+    return cond, match
+end
+
+
+# ** DataFrame Results Extractor
 function fi_results_extractor(jf, df::DataFrame)
     cond = [false for i in 1:size(df, 1)]
 
@@ -548,6 +705,38 @@ function misrep_results_extractor(jf, df::DataFrame,
 end
 
 
+function jeq_results_extractor(jf, df::DataFrame, 
+                               jeqid::Dict, eq_type::Symbol;
+                               jeq_objf::Symbol=:exp_firm_value)
+    
+    cond = [false for i in 1:size(df, 1)]
+
+    if Symbol(df[1, :eq_type]) != eq_type
+        println("Wrong dataframe input. Exiting...")
+        return
+    end
+
+    # Store matching results
+    matchd = Dict{Int64, Symbol}()
+    
+    # Risky Type Copies Safe Type's Capital Structure
+    for row in 1:size(jeqid[:adf], 1)
+        tmp_cond, match = jeq_param_matcher(jf, df, eq_type; 
+                                st_rmp=jeqid[:adf][row, :st_rmp], 
+                                rt_rmp=jeqid[:adf][row, :rt_rmp], 
+                                misrep_type=jeqid[:adf][row, :misrep_type],
+                                jeq_objf=jeq_objf,
+                                misrep_ic_objf=jeqid[:adf][row, :misrep_ic_objf],
+                                misrep_ic_objf_val=jeqid[:adf][row, :misrep_ic_objf_val])
+                  
+        cond = cond .| tmp_cond
+        matchd[row] = match
+    end
+    
+    return df[cond, :], matchd
+end
+
+
 # * Update Results
 function type_comparison(df::DataFrame, x, y)
     if typeof(y) == Bool
@@ -571,7 +760,7 @@ function get_jks_id_cols(df::DataFrame)
         id_cols = [x for x in vcat([colsd[:common_cols], [:type], 
                                     colsd[:extra_cols], type_specific_params]...)
                    if !(x in [:datetime, :mu_s])]
-    else
+    elseif eq_type == :misrep
         specific_params = [x for x in colsd[:specific_cols] if 
                            any([occursin(string(y), string(x)) 
                                 for y in type_specific_params])]
@@ -579,15 +768,20 @@ function get_jks_id_cols(df::DataFrame)
  
         #if eq_type == :misrep
         id_cols = [x for x in vcat([colsd[:common_cols], fi_cols,
-                                    colsd[:extra_cols], specific_params]...)
+                                    colsd[:extra_cols],
+                                    colsd[:rmp_cols],
+                                    specific_params]...)
                    if !(x in [:datetime])]
 
-        # elseif eq_type == :pool
-        #     jeq_cols = [:misrep_type, :misrep_ic_objf, :jeq_objf]
-        #     id_cols = [x for x in vcat([colsd[:common_cols], fi_cols,
-        #                             colsd[:extra_cols], specific_params, jeq_cols]...)
-        #            if !(x in [:datetime])]
-        # end
+    elseif eq_type in [:pool, :pooling, :sep, :separating]
+        dfct = get_df_cols_types(eq_type; svm=true)
+        exc = [:_eq, :leverage, :debt, :_MBR, :st_vb, :rt_vb,
+               :s_mu_b, :r_mu_b, :date]
+        id_cols = [x for x in keys(dfct) if
+                   all([!(occursin(String(y), String(x))) for y in exc])]
+    else
+        println("Error! Equilibrium type not recognized. Exiting...")
+        return
     end
                                  
     return id_cols
@@ -603,7 +797,7 @@ function get_unique_df(jks_fpath::String, eq_type::Symbol;
         eqtype = "misrep"
     elseif eq_type in [:pool, :pooling]
         eqtype = "pooling"
-    elseif eq_type in [:pool, :pooling]
+    elseif eq_type in [:sep, :separating]
         eqtype = "separating"
     else
         println("Error! Wrong equilibrium type. Exiting...")
@@ -619,7 +813,8 @@ function get_unique_df(jks_fpath::String, eq_type::Symbol;
     # Load all results files
     df = DataFrame()
     for x in files
-        tmp = CSV.read(string(jks_fpath, "/", x))
+        # tmp = CSV.read(string(jks_fpath, "/", x))
+        tmp = load_joint_eqdf(string(jks_fpath, "/", x); svm=true)
         df = vcat([df, tmp]...)
     end
     
@@ -714,19 +909,19 @@ end
 function get_rm_nrm_comb_nums(iota::Float64, 
                               lambda::Float64, sigmah::Float64, 
                               cvmdf::DataFrame, svmdf::DataFrame)
-    
-    rm_comb_num = cvmdf[abs.(cvmdf[:, :iota] .- iota) .< 1e-5, 
+
+    rm_comb_num = cvmdf[abs.(cvmdf[:, :iota] .- iota) .< 1e-5,
                         :comb_num][1]
 
     nrm_comb_num = 0
     if .&(!isnan(lambda), !isnan(sigmah))
+
         svmdf_slice = svmdf[.&(abs.(svmdf[:, :lambda] .- lambda) .< 1e-5,
                                    abs.(svmdf[:, :sigmah] .- sigmah) .< 1e-5), 
                             :comb_num]
         nrm_comb_num = !isempty(svmdf_slice) ? svmdf_slice[1] : 0
     end
-        
-                            
+                           
     return rm_comb_num, nrm_comb_num
 end
 
@@ -739,6 +934,10 @@ function firm_type_constructor(; cvm_comb_num::Int64=0,
                                svmdf::DataFrame=DataFrame(),                               
                                opt_k_struct_df_name::String=opt_k_struct_df_name,
                                recompute_svm::Bool=false)
+
+    if svm_comb_num > 0
+        cvm_comb_num = 0
+    end
 
     # Risk-Management: Constant Volatility Model
     if cvm_comb_num > 0
@@ -830,10 +1029,10 @@ function form_joint_types(kappa::Float64, mu_s::Float64,
     td = TypesDist(mu_s,
                    typesdict[:st_iota],
     	           typesdict[:st_lambda],
-    		   typesdict[:st_sigmah],
-    		   typesdict[:rt_iota],
-    		   typesdict[:rt_lambda],
-    		   typesdict[:rt_sigmah])
+    		       typesdict[:st_sigmah],
+    		       typesdict[:rt_iota],
+    		       typesdict[:rt_lambda],
+    		       typesdict[:rt_sigmah])
 
     # Get Safe and Risky Firms' Full Info Optimal Results #####
     if any([isempty(cvmdf), isempty(svmdf)])

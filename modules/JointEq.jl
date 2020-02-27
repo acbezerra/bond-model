@@ -47,6 +47,7 @@ using EqFinDiff: get_cvm_eq,
 using Batch: BatchObj,
              get_bt,
              get_bt_svm,
+             get_bt_mobj,
              get_batch_comb_num,
              opt_k_struct_df_name,
              opt_k_struct_df_coltypes,
@@ -77,7 +78,7 @@ using JointEqStructs: FirmSpecificParams,
                       MarketTypeDist,
                       BondContract,
                       TypesCommonParams,
-                      JointFirms, JointKStruct,
+                      JointFirms, JointKStruct, eq_type_dict,
                       ep_dir, fi_dir, jeq_dir, fidf_name,
                       misrepdf_name, pooldf_name, sepdf_name,
                       fidf_col_types, mps_col_types, epmcols,
@@ -88,7 +89,10 @@ using JointEqStructs: FirmSpecificParams,
                       form_firms_jks, is_svm, get_empty_df,
                       reshape_sf_rf_df, reshape_joint_df, load_joint_eqdf, 
                       fi_results_extractor, misrep_results_extractor,
-                      round_value, get_joint_types_dfs, form_joint_types
+                      jeq_results_extractor, get_jks_id_cols,
+    round_value, get_joint_types_dfs, form_joint_types,
+    get_joint_identifiers, rmp_param_cols, jeq_rmp_param_cols
+
 
 # * Structs, Inputs Objects and Constructor Methods ############
 # ** Joint Structs
@@ -140,13 +144,31 @@ end
 # ** Joint Inputs
 # Inputs -> in this order (need to define structs first)
 # include("_joint_inputs.jl")
-# empty_jep = JointEqParams(vcat(fill(NaN,3), 
-#                                FirmSpecificParams(fill(NaN,4)...),
-#                                FirmSpecificParams(fill(NaN,4)...),
-#                                TypesCommonParams(fill(NaN, 7)...))...)
-empty_jep = nothing
+#
 
+#
+mutable struct JointEqParams
+    # Measure of Bonds
+    mu_s::Float64
 
+    # Transaction Costs
+    kep::Float64
+    kotc::Float64
+
+    # Safe Firm Params
+    sfp::FirmSpecificParams
+
+    # Risky Firm Params
+    rfp::FirmSpecificParams
+
+    # Firm Common Params
+    fcp::TypesCommonParams
+end
+
+empty_jep = JointEqParams(vcat(fill(NaN,3), 
+                               FirmSpecificParams(fill(NaN,4)...),
+                               FirmSpecificParams(fill(NaN,4)...),
+                               TypesCommonParams(fill(NaN, 7)...))...)
 
 
 # ** Joint OTC EP Loader - NEW
@@ -247,6 +269,7 @@ function otc_ep_jfs(k_otc::Float64,
 
     tcdf = get_types_comb_df(pd[:type_specific_params])
 
+
     # My choice
     rt_values = Dict{Symbol, Float64}(:rt_iota => rt_iota,
                                       :rt_lambda => rt_lambda,
@@ -254,21 +277,24 @@ function otc_ep_jfs(k_otc::Float64,
     cond = true
     for x in keys(rt_values)
         # If value is missing, substitute for the first available value:
-        min_val = pd[:type_specific_params][x][1]
-        if x == :rt_iota
-            min_val = minimum([x for x in pd[:type_specific_params][x] if x > .0])
-        end
-        rt_values[x] = isnan(rt_values[x]) ? min_val : rt_values[x]
+        # min_val = pd[:type_specific_params][x][1]
+        # if x == :rt_iota
+        #     min_val = minimum([x for x in pd[:type_specific_params][x] if x > .0])
+        # end
+        # rt_values[x] = isnan(rt_values[x]) ? min_val : rt_values[x]
+        rt_values[x] = isnan(rt_values[x]) ? 0.0 : rt_values[x]
         
         # Extract Rows with combination numbers
         cond = .&(cond, f(tcdf, rt_values, x))
     end
     tc_pair = tcdf[cond, :pair_num][1]
 
-    # Form types dictionary            
+
+    # Form types dictionary
     tmp = tcdf[abs.(tcdf[:, :pair_num] .- tc_pair) .< 1e-5, :]
     typesdict = Dict{Symbol, Float64}([x => tmp[:, x][1] for x in names(tmp)])
     # # #########################################################
+
 
     # Form Joint Firms:
     jfotc = form_joint_types(k_otc, mu_s,
@@ -321,6 +347,88 @@ function ep_pool_sep_eq(ep_jf, ep_jks,
                                            spline_bc=spline_bc)
     
     return pmdf 
+end
+
+
+
+mutable struct OldJointFirms
+    jks #::JointKStruct
+    sf::Firm
+    rf::Firm
+    cvm_bt
+    svm_bt
+    cvmdf::DataFrame
+    svmdf::DataFrame
+end
+
+
+
+mutable struct OldEPStruct
+    # ep_ks::JointKStruct
+    # sf::Firm
+    # rf::Firm
+    jf::OldJointFirms
+    sfdf::DataFrame
+    rfdf::DataFrame
+    misrep::DataFrame
+    pool::DataFrame
+    sep::DataFrame
+end
+
+function old_joint_firm_constructor(sf::Firm, rf::Firm;
+                                sf_comb_num::Int64=0,
+                                rf_comb_num::Int64=0,
+                                # jks::JointKStruct=JointKStruct(fill(NaN, 10)...),
+                                jks=JointKStruct(fill(NaN, 10)...),
+                                m::Float64=NaN,
+                                firm_obj_fun::Symbol=:firm_value,
+                                load_results_dfs::Bool=false,
+                                cvmdf::DataFrame=DataFrame(),
+                                svmdf::DataFrame=DataFrame(),
+                                opt_k_struct_df_name::String=opt_k_struct_df_name,
+                                recompute_svm::Bool=false)
+
+    # Form Batch Objects ###################################
+    sf_bt = BatchObj(; model=sf.model)
+    rf_bt = BatchObj(; model=rf.model)
+    if sf_comb_num > 0
+        sf_bt = set_par_dict(sf_bt; comb_num=sf_comb_num)
+    end
+    if rf_comb_num > 0
+        rf_bt = set_par_dict(rf_bt; comb_num=rf_comb_num)
+    end
+    # ######################################################
+
+    if .&(isnan(m), !isnan(jks.m))
+        m = jks.m
+    end
+
+    if load_results_dfs
+        #cvm_bt = BatchObj(; model="cvm")
+        svm_bt = BatchObj(; model="svm")
+
+        cvmdf = load_cvm_opt_results_df(; m=m, firm_obj_fun=firm_obj_fun)
+        svmdf = load_svm_opt_results_df(svm_bt; m=m,
+                                        firm_obj_fun=firm_obj_fun,
+                                        opt_k_struct_df_name=opt_k_struct_df_name,
+                                        recompute=recompute_svm)
+    end
+
+    # Set Optimal Capital Structure ########################
+    df = (sf.model == "cvm") ? cvmdf : svmdf
+    if .&(sf_comb_num > 0, !isempty(df))
+        sf = set_opt_k_struct(sf, df)
+    end
+
+    df = (rf.model == "cvm") ? cvmdf : svmdf
+    if .&(rf_comb_num > 0, !isempty(df))
+        rf = set_opt_k_struct(rf, df)
+    end
+    # #####################################################
+
+
+    jf = OldJointFirms(jks, sf, rf, sf_bt, rf_bt, cvmdf, svmdf)
+    #jf = JointFirms(jks, sf, rf, cvm_bt, svm_bt, cvmdf, svmdf)
 end
 
 
@@ -386,7 +494,7 @@ function ep_constructor(jep, sf_bt, rf_bt;
 
 
     # Joint Firm Constructor ##########################################
-    ep_jf = joint_firm_constructor(ep_sf_svm, ep_rf_svm;
+    ep_jf = old_joint_firm_constructor(ep_sf_svm, ep_rf_svm;
                                    jks=ep_jks,
                                    load_results_dfs=false)
     # #################################################################
@@ -445,17 +553,36 @@ function ep_constructor(jep, sf_bt, rf_bt;
             setfield!(misrep_jks, :mu_b, fi_sf_mu_b)
         end
         
-        ep_misrep_eqdf = find_joint_optimal_vb(ep_jf, misrep_jks;
+        ep_misrep_eqdf = find_joint_optimal_vb(ep_jf.sf, ep_jf.rf, misrep_jks;
                                                mu_b=fi_sf_mu_b,
                                                rerun_fi_vb=true)
 
         # Add Objective Function columns
-        ep_misrep_eqdf[!, :obj_fun] .= String(sf_obj_fun)
-        ep_misrep_eqdf[2, :obj_fun] = "misrep"
+        # ep_misrep_eqdf[!, :obj_fun] .= String(sf_obj_fun)
+        # ep_misrep_eqdf[2, :obj_fun] = "misrep"
         ep_misrep_eqdf[!, :eq_type] .= "misrep"
-        
+
+        jeq_objf = sf_obj_fun
+        misrep_type = :rt
+        misrep_ic_objf = rf_obj_fun
+
+        ep_misrep_eqdf[!, :datetime] .= Dates.now()
+        ep_misrep_eqdf[!, :type] = [:st, :rt]
+        ep_misrep_eqdf[!, :rmp] = [:st, :rt]
+        ep_misrep_eqdf[!, :jeq_objf] .= jeq_objf
+        ep_misrep_eqdf[!, :misrep_type] .= misrep_type
+        ep_misrep_eqdf[!, :misrep_ic_objf] .= misrep_ic_objf
+
+        ep_misrep_eqdf[!, :s_rm_iota] .= ep_jf.sf.pm.iota
+        ep_misrep_eqdf[!, :s_nrm_lambda] .= .0
+        ep_misrep_eqdf[!, :s_nrm_sigmah] .= NaN
+        ep_misrep_eqdf[!, :r_rm_iota] .= ep_jf.rf.pm.iota
+        ep_misrep_eqdf[!, :r_nrm_sigmah] .= ep_jf.rf.pm.sigmah
+        ep_misrep_eqdf[!, :r_nrm_lambda] .= ep_jf.rf.pm.lambda
+
         # Reshape
-        ep_misrep_eqdf = reshape_sf_rf_df(ep_misrep_eqdf)
+        # ep_misrep_eqdf = reshape_sf_rf_df(ep_misrep_eqdf)
+        ep_misrep_eqdf = reshape_joint_df(ep_misrep_eqdf)
     else
         ep_misrep_eqdf = DataFrame(mp)
     end
@@ -500,7 +627,7 @@ function ep_constructor(jep, sf_bt, rf_bt;
 
 
    # Form Electronic Platform Struct #################################
-   return EPStruct(ep_jf, ep_sf_eqdf, ep_rf_eqdf,
+   return OldEPStruct(ep_jf, ep_sf_eqdf, ep_rf_eqdf,
                    ep_misrep_eqdf, ep_pool_eqdf, ep_sep_eqdf)
 end
 
@@ -1491,27 +1618,27 @@ function get_otc_fi_opt_rmp(ft::FirmType)
     if .&(!isnothing(ft.rm.fr), isnothing(ft.nrm.fr))
         opt_rmp = :rm
     elseif .&(!isnothing(ft.rm.fr), !isnothing(ft.nrm.fr))
-        rm_debt = BondPrInterp.get_cvm_debt_price(ft.rm.fr, ft.rm.fr.optKS.vbl, 
-                                          ft.rm.fr.pm.sigmal;
-                                          mu_b=ft.rm.fr.optKS.mu_b, 
-                                          m=ft.rm.fr.optKS.m, 
-                                          c=ft.rm.fr.optKS.c,    
-                                          p=ft.rm.fr.optKS.p)
+        rm_debt = get_cvm_debt_price(ft.rm.fr, ft.rm.fr.optKS.vbl, 
+                                     ft.rm.fr.pm.sigmal;
+                                     mu_b=ft.rm.fr.optKS.mu_b, 
+                                     m=ft.rm.fr.optKS.m, 
+                                     c=ft.rm.fr.optKS.c,    
+                                     p=ft.rm.fr.optKS.p)
 
-        rm_eq = EqFinDiff.get_cvm_eq(ft.rm.fr, ft.rm.fr.pm.V0,
-                                      ft.rm.fr.pm.sigmal;
-                                      mu_b=ft.rm.fr.optKS.mu_b, 
-                                      m=ft.rm.fr.optKS.m, 
-                                      c=ft.rm.fr.optKS.c,    
-                                      p=ft.rm.fr.optKS.p)
+        rm_eq = get_cvm_eq(ft.rm.fr, ft.rm.fr.pm.V0,
+                           ft.rm.fr.pm.sigmal;
+                           mu_b=ft.rm.fr.optKS.mu_b, 
+                           m=ft.rm.fr.optKS.m, 
+                           c=ft.rm.fr.optKS.c,    
+                           p=ft.rm.fr.optKS.p)
         
         rm_fv = rm_debt + rm_eq
         
-        nrm_res = EqFinDiff.eq_fd(ft.nrm.fr; vbl=ft.nrm.fr.optKS.vbl, 
-                                  mu_b=ft.nrm.fr.optKS.mu_b, 
-                                  m=ft.nrm.fr.optKS.m, 
-                                  c=ft.nrm.fr.optKS.c,    
-                                  p=ft.nrm.fr.optKS.p)
+        nrm_res = eq_fd(ft.nrm.fr; vbl=ft.nrm.fr.optKS.vbl, 
+                        mu_b=ft.nrm.fr.optKS.mu_b, 
+                        m=ft.nrm.fr.optKS.m, 
+                        c=ft.nrm.fr.optKS.c,    
+                        p=ft.nrm.fr.optKS.p)
         
         nrm_fv = nrm_res[:firm_value]
         
@@ -2286,10 +2413,16 @@ function sep_eq_fd(fr, bc, mu_b::Float64)
 end
 
 
-function separate_eq_calculator(sf, rf, bc, mu_s::Float64,
-                                mu_b_opt::Float64, fi_rf_mu_b::Float64)
-    s_eqdf = sep_eq_fd(sf, bc, mu_b_opt)
-    r_eqdf = sep_eq_fd(rf, bc, fi_rf_mu_b)
+function separate_eq_calculator(sf, rf, bc, mu_s::Float64, 
+                                misrep_type::Symbol,
+                                mu_b_opt::Float64,
+                                misrep_type_fi_mu_b::Float64)
+
+    st_mu_b = misrep_type == :rt ? mu_b_opt : misrep_type_fi_mu_b
+    rt_mu_b = misrep_type == :rt ? misrep_type_fi_mu_b : mu_b_opt
+    
+    s_eqdf = sep_eq_fd(sf, bc, st_mu_b)
+    r_eqdf = sep_eq_fd(rf, bc, rt_mu_b)
     
     s_eqdf[!, :fi_vb] .= s_eqdf[1, :vb]
     s_eqdf[!, :st_vb] .= s_eqdf[1, :vb]
@@ -2309,13 +2442,16 @@ end
 
 # ** Joint Optimal Bond Measure - Adjusted
 function get_joint_objf(fd, jks, objf::Symbol)
-    if objf == :sf_firm_value
+    if objf == :st_firm_value
        f1(X::Array{Float64,1}) = map(x -> fd[:st][:firm_value](x) , X)
        return f1
     elseif objf == :exp_firm_value
        f2(X::Array{Float64,1}) = map(x -> jks.mu_s * fd[:st][:firm_value](x) + 
                             (1 - jks.mu_s) * fd[:rt][:firm_value](x), X)
-       return f2
+        return f2
+    elseif objf == :rt_firm_value
+        f1(X::Array{Float64,1}) = map(x -> fd[:rt][:firm_value](x) , X)
+        return f1
     else
        println("Error! Objective function not recognized.")
        return
@@ -2362,9 +2498,10 @@ end
 
 function get_sep_eqdf(sf, rf, bc, jks,
                       mu_b_grid::Array{Float64, 1},
-                      fi_rf_mu_b::Float64,
-                      rf_ic_objf_val::Float64;
-                      rf_objf::Symbol=:MBR,
+                      misrep_type::Symbol,
+                      misrep_type_fi_mu_b::Float64,
+                      misrep_ic_objf_val::Float64;
+                      misrep_ic_objf::Symbol=:MBR,
                       jeq_objf::Symbol=:sf_firm_value,  
                       spline_k::Int64=3,
                       spline_bc::String="extrapolate",
@@ -2373,7 +2510,7 @@ function get_sep_eqdf(sf, rf, bc, jks,
 
     # Compute the Payoffs in case of Misrepresentation
     sep_misrep_jks = deepcopy(jks)
-    sep_misrep_jks.mu_s = 1.
+    sep_misrep_jks.mu_s = misrep_type == :rt ? 1. : .0
     resd = find_joint_payoffs(sf, rf, sep_misrep_jks,
                               mu_b_grid;
                               spline_k=spline_k,
@@ -2382,9 +2519,9 @@ function get_sep_eqdf(sf, rf, bc, jks,
 
     # Filter -> leverage values for which misrepresentation is not
     # attractive
-    rt_ic_cond = resd[:rt][rf_objf](resd[:mu_b_grid]) .<= rf_ic_objf_val
+    misrep_ic_cond = resd[misrep_type][misrep_ic_objf](resd[:mu_b_grid]) .<= misrep_ic_objf_val
     filtered_mu_b_grid_1, filtered_mu_b_grid_2 = find_mu_b_intervals(resd[:mu_b_grid],
-                                                                     rt_ic_cond; N=N1)
+                                                                     misrep_ic_cond; N=N1)
 
     # Form Joint Objective Function
     # In the separating case, it is the safe type's firm value.
@@ -2401,7 +2538,9 @@ function get_sep_eqdf(sf, rf, bc, jks,
     
 
     # Compute Separating Eq. Payoffs
-    eqdf = separate_eq_calculator(sf, rf, bc, jks.mu_s, mu_b_opt, fi_rf_mu_b)
+    eqdf = separate_eq_calculator(sf, rf, bc, jks.mu_s,
+                                  misrep_type, mu_b_opt,
+                                  misrep_type_fi_mu_b)
 
     return eqdf
 end
@@ -2492,10 +2631,10 @@ function compute_misrep(jf, fidf::DataFrame;
     tmp = Dict{Symbol, Any}(:mu_b => NaN,
                             :firm_value => NaN, 
                             :rmp => Symbol())
-    fid = Dict{Symbol, Dict}([x => tmp for x in [:st, :rt]])
-    for x in [:mu_b, :firm_value, :rmp]
-        for tp in [:st, :rt]
-            fid[tp][x] = fieqdf[Symbol.(fieqdf[:, :type]) .== :st, x][1] 
+    fid = Dict{Symbol, Dict}([x => deepcopy(tmp) for x in [:st, :rt]])
+    for tp in [:st, :rt]
+        for x in [:mu_b, :firm_value, :rmp]
+            fid[tp][x] = fieqdf[Symbol.(fieqdf[:, :type]) .== tp, x][1]
         end
     end
     
@@ -2580,17 +2719,23 @@ function get_fi_results(jf, fidf_fpath_name::String;
     
         # Check for missing (ft, rmp)-pairs
         missing_ft_rmp = sum([(matchd[x] == :unmatched) for x in keys(matchd)]) > 0
-    
-        if !missing_ft_rmp
-            fidf, fieqdf = get_fi_eq(jf; fidf=fidf)
-        end
     end
+
 
     if missing_ft_rmp | recompute_df
         # Compute Full Information Solution
         fidf, fieqdf = get_fi_eq(jf)
         save_df = true
+    else
+        # Get list of ID columns
+        id_cols = get_jks_id_cols(fidf)
+                
+        # Form DataFrame with Unique Rows
+        fidf = unique(fidf, id_cols)
+
+        fidf, fieqdf = get_fi_eq(jf; fidf=fidf)
     end
+    
 
     # Save DataFrame
     if save_df
@@ -2605,22 +2750,22 @@ end
 
 function get_misrep_results(jf, fidf::DataFrame,
                             misrepdf_fpath_name::String;
-                            load_misrepdf::Bool=true,
-                            recompute_misrepdf::Bool=false,
+                            load_df::Bool=true,
+                            recompute_df::Bool=false,
                             save_df::Bool=false)
 
     misrepdf=DataFrame()
     svm=is_svm(jf)
     
-    load_misrepdf = isfile(misrepdf_fpath_name) ? load_misrepdf : false
-    recompute_misrepdf = isfile(misrepdf_fpath_name) ? recompute_misrepdf : true
+    load_df = isfile(misrepdf_fpath_name) ? load_df : false
+    recompute_df = isfile(misrepdf_fpath_name) ? recompute_df : true
     missing_ft_rmp = false
     
     _, fieqdf = get_fi_eq(jf; fidf=fidf)
     st_fi_rmp =  Symbol(fieqdf[Symbol.(fieqdf[:, :type]) .== :st,  :rmp][1])
     rt_fi_rmp =  Symbol(fieqdf[Symbol.(fieqdf[:, :type]) .== :rt,  :rmp][1])
     
-    if load_misrepdf
+    if load_df
         # Load misrepdf, extract results
         lmisrepdf = load_joint_eqdf(misrepdf_fpath_name; svm=svm)
         
@@ -2633,14 +2778,31 @@ function get_misrep_results(jf, fidf::DataFrame,
         missing_ft_rmp = f(matchd[:st_misrep]) + f(matchd[:rt_misrep]) > 0
     end
     
-    if missing_ft_rmp | recompute_misrepdf
+    if missing_ft_rmp | recompute_df
         # Compute Full Information Solution
         ep_misrep_eqdf = compute_misrep(jf, fidf)
+
+        # Add RMP Parameter Columns
+        pd = get_joint_identifiers(jf)
+        for ft in [:s, :r]
+            for y in rmp_param_cols
+                var = Symbol(ft, :_, y)
+                ep_misrep_eqdf[!, var] .= pd[var]
+            end
+        end
         
+        # Reshape
         misrepdf = reshape_joint_df(ep_misrep_eqdf; svm=svm)
         
         save_df = true
+    else
+        # Get list of ID columns
+        id_cols = get_jks_id_cols(misrepdf)
+                
+        # Form DataFrame with Unique Rows
+        misrepdf = unique(misrepdf, id_cols)
     end
+    
     
     # Save DataFrame
     if save_df
@@ -2683,33 +2845,198 @@ function fi_misrep_analysis(jf, fieqdf::DataFrame,
         # store results
         if !isempty(df)
             for row in 1:size(df, 1)
-                tmpd = Dict{Symbol, Any}(:misrep_type => misrep_type,
+                tmpd = Dict{Symbol, Any}(:m => df[1, :m],
+                                         :c => df[1, :c],
+                                         :p => df[1, :p],
+                                         :misrep_type => misrep_type,
                                          :misrep_ic_objf => misrep_ic_objf,
                                          :misrep_ic_objf_val => misrep_ic_objf_val,
                                          :st_rmp => df[row, :s_rmp],
                                          :rt_rmp => df[row, :r_rmp],
                                          :fi_st_vb => fieqdf[fieqdf[:, :type] .== :st, :vb][1],
-                                         :fi_rt_vb => fieqdf[fieqdf[:, :type] .== :rt, :vb][1])
+                                         :fi_st_mu_b => fieqdf[fieqdf[:, :type] .== :st, :mu_b][1],
+
+                                         :fi_rt_vb => fieqdf[fieqdf[:, :type] .== :rt, :vb][1],
+                                         :fi_rt_mu_b => fieqdf[fieqdf[:, :type] .== :rt, :mu_b][1])
 
                 adf = vcat(adf, DataFrame(tmpd))                
             end
         end
     end
     
-    cols = [:misrep_type, :st_rmp, :rt_rmp, 
-            :misrep_ic_objf, :misrep_ic_objf_val, :fi_st_vb, :fi_rt_vb]
+    cols = vcat([:m, :c, :p, :misrep_type, :st_rmp, :rt_rmp, 
+                 :misrep_ic_objf, :misrep_ic_objf_val,
+                 :fi_st_mu_b, :fi_st_vb, :fi_rt_mu_b, :fi_rt_vb],
+                jeq_rmp_param_cols)
+    adf = hcat(adf, DataFrame(get_joint_identifiers(jf)))
+                
+    
     return adf[:, cols]
 end
 
 
+function get_joint_eq_inputs(jf, jks, jks_fpath::String; 
+                            fidf::DataFrame=DataFrame(), 
+                            fieqdf::DataFrame=DataFrame(),
+                            load_fidf::Bool=true,
+                            recompute_fidf::Bool=false,
+                            save_fidf::Bool=true,
+                            misrepdf::DataFrame=DataFrame(),
+                            load_misrepdf::Bool=true,
+                            recompute_misrepdf::Bool=false,
+                            save_misrepdf::Bool=true,
+                            mu_bN::Int64=20)
+    
+    # File Path Names
+    fidf_fpath_name = string(jks_fpath, "/", 
+                             eq_type_dict["full_info"][:dfn], ".csv") 
+    misrepdf_fpath_name = string(jks_fpath, "/", 
+                                 eq_type_dict["misrep"][:dfn], ".csv") 
+    pooldf_fpath_name = string(jks_fpath, "/", 
+                               eq_type_dict["pooling"][:dfn], ".csv")
+    sepdf_fpath_name = string(jks_fpath, "/", 
+                              eq_type_dict["separating"][:dfn], ".csv")
+    
+    # Full Infotmation Results
+    if isempty(fidf)
+        fidf, fieqdf = get_fi_results(jf, fidf_fpath_name,
+                                      load_df=load_fidf,
+                                      recompute_df=recompute_fidf,
+                                      save_df=save_fidf)
+    elseif isempty(fieqdf)
+        fidf, fieqdf = get_fi_eq(jf; fidf=fidf)
+    end
+
+    
+    # Misrepresentation Results
+    if isempty(misrepdf)
+        misrepdf = get_misrep_results(jf, fidf, misrepdf_fpath_name;
+                                      load_df=load_misrepdf,
+                                      recompute_df=recompute_misrepdf,
+                                      save_df=save_misrepdf)
+    end
+    
+    # Identify Joint Equilibrium Case 
+    adf = fi_misrep_analysis(jf, fieqdf, misrepdf)
+
+    
+    # Compute mu_b grid:
+    min_mu_b = .75 * minimum(fidf[:, :mu_b])
+    max_mu_b = 1.25 * maximum(fidf[:, :mu_b])
+    mu_b_grid = Array(range(min_mu_b, stop=max_mu_b, length=mu_bN))
+    
+    
+    return Dict{Symbol, Any}(:fidf_fpath_name => fidf_fpath_name,
+                             :misrepdf_fpath_name => misrepdf_fpath_name,
+                             :pooldf_fpath_name => pooldf_fpath_name,
+                             :sepdf_fpath_name => sepdf_fpath_name,
+                             :fidf => fidf,
+                             :fieqdf => fieqdf,
+                             :misrepdf => misrepdf,
+                             :adf => adf,
+                             :mu_b_grid => mu_b_grid)
+end
+
+
 # ** Pooling Equilibrium
-function compute_type_contingent_pool_eq(jf, jks, adf::DataFrame,
-                                         mu_b_grid::Array{Float64, 1};
-                                         jeq_objf::Symbol=:exp_firm_value)
+# function compute_type_contingent_jeq_eq(jf,
+#                                         eq_type::Symbol,
+#                                         jks, adf::DataFrame,
+#                                         mu_b_grid::Array{Float64, 1};
+#                                         jeq_objf::Symbol=:exp_firm_value)
+
+#     # If type has incentive for misrepresentation,
+#     # compute joint pooling equilibrium
+#     jeqdf = DataFrame()
+#     if !isempty(adf)
+#         for row in 1:size(adf, 1)
+#             st_rmp = adf[row, :st_rmp]
+#             rt_rmp = adf[row, :rt_rmp]
+#             misrep_type = adf[row, :misrep_type]
+#             misrep_ic_objf = adf[row, :misrep_ic_objf]
+#             misrep_ic_objf_val = adf[row, :misrep_ic_objf_val]
+            
+            
+#             sf = getfield(jf.st, st_rmp).fr
+#             rf = nothing
+#             if misrep_type == :st
+#                 sf = nothing
+#                 rf = getfield(jf.rt, rt_rmp).fr
+#             end
+            
+#             # Misrepresenting Firm
+#             for rmp in [:nrm ] # [:rm, :nrm]
+#                 # Form misrepresenting firm
+#                 mf = getfield(getfield(jf, misrep_type), rmp).fr
+
+#                 if !isnothing(mf)
+#                     sf = misrep_type == :rt ? sf : mf
+#                     rf = misrep_type == :rt ? mf : rf
+                    
+#                     jks2 = deepcopy(jks)
+#                     # DO I NEED THIS PART?
+#                     fi_st_vb = adf[row, :fi_st_vb]
+#                     fi_rt_vb = adf[row, :fi_rt_vb]
+#                     setfield!(jks2, :fi_st_vb, fi_st_vb)
+#                     setfield!(jks2, :fi_rt_vb, fi_rt_vb)
+
+#                     # Compute Pooling Eq Resuls
+#                     if eq_type == :pool
+#                         tmpdf = get_pool_eqdf(sf, rf, jks2,
+#                                               mu_b_grid,
+#                                               misrep_type,
+#                                               misrep_ic_objf_val;
+#                                               misrep_ic_objf=misrep_ic_objf,
+#                                               jeq_objf=jeq_objf)
+#                     elseif eq_type == :sep
+#                         bc = BondContract(adf[row, :m], adf[row, :c], adf[row, :p])
+#                         misrep_type_fi_mu_b = adf[row, Symbol(:fi_, misrep_type, :_mu_b)]
+#                         tmpdf = get_sep_eqdf(sf, rf, bc, jks2,
+#                                              mu_b_grid,
+#                                              misrep_type,
+#                                              misrep_type_fi_mu_b,
+#                                              misrep_ic_objf_val;
+#                                              misrep_ic_objf=misrep_ic_objf,
+#                                              jeq_objf=jeq_objf)
+
+#                     end
+#                     tmpdf[!, :eq_type] .= eq_type
+#                     tmpdf[!, :datetime] .= Dates.now()
+#                     tmpdf[!, :type] = [:st, :rt]
+#                     tmpdf[!, :rmp] = [st_rmp, rt_rmp]
+#                     tmpdf[!, :jeq_objf] .= jeq_objf
+#                     tmpdf[!, :misrep_type] .= misrep_type
+#                     tmpdf[!, :misrep_ic_objf] .= misrep_ic_objf
+#                     tmpdf[!, :misrep_ic_objf_val] .= misrep_ic_objf_val
+
+
+#                     # Get Type Identifiers
+#                     iddf = repeat(DataFrame(get_joint_identifiers(jf)), 2)
+#                     tmpdf = hcat(tmpdf, iddf)
+
+#                     # Reshape DataFrame
+#                     tmpdf_rsp = reshape_joint_df(tmpdf)
+
+#                     # Append to main dataframe
+#                     jeqdf = vcat(jeqdf, tmpdf_rsp)
+#                 end
+#             end
+#         end
+#     end
+
+#     return jeqdf
+# end
+
+
+function compute_type_contingent_jeq_eq(jf,
+                                        eq_type::Symbol,
+                                        jks, adf::DataFrame,
+                                        mu_b_grid::Array{Float64, 1};
+                                        jeq_objf::Symbol=:exp_firm_value)
 
     # If type has incentive for misrepresentation,
     # compute joint pooling equilibrium
-    pooldf = DataFrame()
+    jeqdf = DataFrame()
     if !isempty(adf)
         for row in 1:size(adf, 1)
             st_rmp = adf[row, :st_rmp]
@@ -2730,16 +3057,28 @@ function compute_type_contingent_pool_eq(jf, jks, adf::DataFrame,
             setfield!(jks2, :fi_rt_vb, fi_rt_vb)
 
             
-            # Compute Pooling Eq Resuls 
-            tmpdf = get_pool_eqdf(sf, rf, jks2, 
-                                  mu_b_grid,
-                                  misrep_type,
-                                  misrep_ic_objf_val;
-                                  misrep_ic_objf=misrep_ic_objf,
-                                  jeq_objf=jeq_objf)
+            # Compute Pooling Eq Resuls
+            if eq_type == :pool 
+                tmpdf = get_pool_eqdf(sf, rf, jks2, 
+                                      mu_b_grid,
+                                      misrep_type,
+                                      misrep_ic_objf_val;
+                                      misrep_ic_objf=misrep_ic_objf,
+                                      jeq_objf=jeq_objf)
+            elseif eq_type == :sep
+                bc = BondContract(adf[row, :m], adf[row, :c], adf[row, :p])
+                misrep_type_fi_mu_b = adf[row, Symbol(:fi_, misrep_type, :_mu_b)]
+                tmpdf = get_sep_eqdf(sf, rf, bc, jks2,
+                                     mu_b_grid,
+                                     misrep_type,
+                                     misrep_type_fi_mu_b,
+                                     misrep_ic_objf_val;
+                                     misrep_ic_objf=misrep_ic_objf,
+                                     jeq_objf=jeq_objf)
+                
+            end
 
-            
-            tmpdf[!, :eq_type] .= :pool
+            tmpdf[!, :eq_type] .= eq_type
             tmpdf[!, :datetime] .= Dates.now()
             tmpdf[!, :type] = [:st, :rt]
             tmpdf[!, :rmp] = [st_rmp, rt_rmp]
@@ -2748,81 +3087,76 @@ function compute_type_contingent_pool_eq(jf, jks, adf::DataFrame,
             tmpdf[!, :misrep_ic_objf] .= misrep_ic_objf
             tmpdf[!, :misrep_ic_objf_val] .= misrep_ic_objf_val
 
+            # Get Type Identifiers
+            iddf = repeat(DataFrame(get_joint_identifiers(jf)), 2)
+            tmpdf = hcat(tmpdf, iddf)
+
             # Reshape DataFrame
             tmpdf_rsp = reshape_joint_df(tmpdf)
 
             # Append to main dataframe 
-            pooldf = vcat(pooldf, tmpdf_rsp)
+            jeqdf = vcat(jeqdf, tmpdf_rsp)
         end
     end
 
-    return pooldf
+    return jeqdf
 end
 
 
 # ** Pooling and Separating Equilibrium
-function get_pool_results(jf, fidf::DataFrame,
-                          df_fpath_name::String;
-                          load_df::Bool=true,
-                          recompute_df::Bool=false,
-                          save_df::Bool=false,
-                          mu_bN::Int64=20)
-
-    min_mu_b = .75 * minimum(fidf[:, :mu_b])
-    max_mu_b = 1.25 * maximum(fidf[:, :mu_b])
-    mu_b_grid = range(min_mu_b, stop=max_mu_b, length=mu_bN)
-
-
+function get_jeq_results(jf, jks, eq_type::Symbol,
+                         jeq_objf::Symbol,
+                         jeqid::Dict{Symbol, Any};
+                         load_df::Bool=true,
+                         recompute_df::Bool=false,
+                         save_df::Bool=true)
     
-    rf_ic_objf_val = fieqdf[fieqdf[:, :type] .== :rt, :MBR][1]
-    pooldf = JointEq.get_pool_eqdf(sf, rf, jks, Array(mu_b_grid),
-                                   rf_ic_objf_val)
+    if eq_type in [:pool, :pooling]
+        fpath_name = jeqid[:pooldf_fpath_name]
+    elseif eq_type in [:sep, :separating]
+        fpath_name = jeqid[:sepdf_fpath_name]
+    else
+        println(string("Error! Equilibrium type not recognized.\n", 
+                       "Please enter :pool or :sep. \nExiting..."))
+        return
+    end
 
-
-    # for 
-    
-
-    pooldf=DataFrame()
-    svm=is_svm(jf)
-    
-    load_df = isfile(df_fpath_name) ? load_df : false
-    recompute_df = isfile(df_fpath_name) ? recompute_df : true
     missing_ft_rmp = false
-    
-    _, fieqdf = get_fi_eq(jf; fidf=fidf)
-    st_fi_rmp =  Symbol(fieqdf[Symbol.(fieqdf[:, :type]) .== :st,  :rmp][1])
-    rt_fi_rmp =  Symbol(fieqdf[Symbol.(fieqdf[:, :type]) .== :rt,  :rmp][1])
-    
+    df = DataFrame()
     if load_df
-        # Load misrepdf, extract results
-        lmisrepdf = load_joint_eqdf(misrepdf_fpath_name; svm=svm)
+        # Load  df, extract results
+        ldf = load_joint_eqdf(fpath_name; svm=is_svm(jf))
         
         # Extract Results
-        misrepdf, matchd = misrep_results_extractor(jf, lmisrepdf, 
-                                                    st_fi_rmp, rt_fi_rmp)
+        df, matchd = jeq_results_extractor(jf, ldf, jeqid, eq_type,
+                                           jeq_objf=jeq_objf)
         
-        # Check for missing (ft, rmp)-pairs
-        f(x) = sum([(x[y] == :unmatched) for y in keys(x)])
-        missing_ft_rmp = f(matchd[:st_misrep]) + f(matchd[:rt_misrep]) > 0
+        # Check for missing cases
+        missing_ft_rmp = sum([matchd[key] != :matched for key in keys(matchd)]) > 0 
     end
-    
-    if missing_ft_rmp | recompute_misrepdf
-        # Compute Full Information Solution
-        ep_misrep_eqdf = compute_misrep(jf, fidf)
-        
-        misrepdf = reshape_joint_df(ep_misrep_eqdf; svm=svm)
-        
-        save_df = true
-    end
-    
-    # Save DataFrame
-    if save_df
-        tt = Dates.now()
-        fpath_name = string(chop(misrepdf_fpath_name; tail=4),  "_", tt, ".csv")
-        CSV.write(fpath_name, misrepdf)
-    end
-end
 
+    if missing_ft_rmp | recompute_df
+        df = compute_type_contingent_jeq_eq(jf, eq_type, jks, 
+                                            jeqid[:adf],
+                                            jeqid[:mu_b_grid],
+                                            jeq_objf=jeq_objf)
+    else
+        # Get list of ID columns
+        id_cols = get_jks_id_cols(df)
+                
+        # Form DataFrame with Unique Rows
+        df = unique(df, id_cols)
+     end
+
+    
+    if save_df
+        fpath_name = string(replace(fpath_name, ".csv" => ""),
+                            "_", df[1, :datetime], ".csv")
+        CSV.write(fpath_name, df)
+    end
+
+    return df
+end
 
 # * END MODULE
 end

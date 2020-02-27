@@ -115,10 +115,10 @@ svm_param_values_dict = Dict{Symbol,Array{Float64,1}}(:mu_b => [1.],
                                                       :xi => [1.],
                                                       :kappa => [k * 1e-4 for k in [10, 25, 30, 40, 50]],
                                                       :gross_delta => [.02],
-                                                      :lambda => [.1, .2, .3, .5, .75],
+                                                      :lambda => [.1, .15, .2, .3, .5, .75],
                                                       :iota => [.0],
                                                       :sigmal => [.15],
-                                                      :sigmah => [.2, .225, .25, .275, .30, .35])
+                                                      :sigmah => [.175, .2, .225, .25, .275, .30, .325, .35])
 
 
 # Coupon Values Grid:

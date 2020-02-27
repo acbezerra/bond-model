@@ -1,0 +1,21 @@
+/home/artur/BondPricing/Julia/Batch/new_jks
+/home/artur/BondPricing/Julia/log_files/JEQ/258878[23].acropolis
+/var/spool/torque/aux//258878[23].acropolis
+23
+i. Number of processors/cores: 20
+ii. Position in the Safe Firm Measure array:
+iii. Rerun Full Information Results: 0
+iv. Rerun Misrepresentation Results: 0
+v. Run Pooling Equilibrium: 0
+vi. Run Separating Equilibrium: 0
+
+#################
+Epilogue Job Info:
+Job ID: 258878[23].acropolis
+User ID: artur
+Job Name: jSVM-23
+Resource List: nodes=1:ppn=20,mem=80gb,neednodes=1:ppn=20,walltime=2400:00:00
+Resources Used: cput=00:01:55,vmem=3117316kb,walltime=00:01:48,mem=931184kb,energy_used=0
+Exit Code: 0
+#################
+

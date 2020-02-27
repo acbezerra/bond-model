@@ -9,6 +9,7 @@ using CSV
 using Dierckx
 using Dates
 
+
 main_path = "/home/artur/BondPricing"
 module_path = string(main_path, "/", "Julia/modules/")
 modls = ["ModelObj", "AnalyticFunctions", 
@@ -17,33 +18,63 @@ for modl in modls
     include(string(joinpath(module_path, modl), ".jl"))
 end
 
+
 # #########################################################
 # ######################## INPUTS #########################
 # #########################################################
+# Diagnostics Script Inputs
+# 1. (OPTIONAL) choose model: cvm = 0, svm = 1 (default)
+# 2. (OPTIONAL) recompute: false = 0 (default), true = 1
+# 3. (OPTIONAL) diganose: false = 0, true = 1 (default)
+# 4. (OPTIONAL) maturity: m = 1. (default)
+# 5. (OPTIONAL) compilation: false = 0, true = 1 (default)
+# 6. (OPTIONAL) return results: false = 0, true = 1 (default)
+
+# ################ SYS ARGUMENTS ################
+println(string("ARGUMENTS: ", ARGS))
 # Choose model
-model="cvm"
+model = "svm"
+if size(ARGS, 1) > 0
+    model = parse(Int, ARGS[1]) == 1 ? "svm" : "cvm"
+end
+
+# Wether to recompute results
+recompute = false
+if size(ARGS, 1) > 1
+    recompute = parse(Bool, ARGS[2])
+end
+
+# Run Diagnostics
+diagnose = true
+if size(ARGS, 1) > 2
+    diagnose = parse(Bool, ARGS[3])
+end
 
 # Debt Maturity
 m = 1.
+if size(ARGS, 1) > 3
+    m = parse(Float64, ARGS[4])
+end
+
+# Compile Results to find Optimal Capital Structure
+compilation = true
+if size(ARGS, 1) > 4
+    compilation = parse(Bool, ARGS[5])
+end
+
+# Whether to return the results to user interface
+return_results = true
+if size(ARGS, 1) > 5
+    return_results = parse(Bool, ARGS[6])
+end
 
 # Firms' Objective Functions
 obj_funs = Dict{Symbol, Symbol}(:fv => :firm_value)
 
-# Run Diagnostics
-diagnose=true
-
-# Compile Results to find Optimal Capital Structure
-compilation=true
 
 # Dictionary to store results
 res = Dict{Symbol, Any}(:model => model,
                         :m => m)
-
-# Wether to recompute results
-recompute=true
-
-# Whether to return the results to user interface
-return_results=true
 # #########################################################
 
 

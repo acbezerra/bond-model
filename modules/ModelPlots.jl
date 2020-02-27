@@ -45,6 +45,7 @@ contour_plots_path = string(main_dir_path, "/Plots/Contour")
 
 cvm_vs_svm_plots_dir = "CVMvsSVM"
 rmp_plots_dir = "RMP"
+nrmp_plots_dir = "NRMP"
 heat_surf_graph_dir="HeatSurf"
 obj_fun_dict = Dict{Symbol, String}(:firm_value => "fv",
                                     :MBR => "mbr")
@@ -175,17 +176,35 @@ function vlines_labels_dict(xvar; fv_xvar::Float64=NaN,
 
     if any([isnan(cvm_misrep_xvar), isnan(svm_misrep_xvar)])
         misrep_xvar = isnan(cvm_misrep_xvar) ? svm_misrep_xvar : cvm_misrep_xvar
-        
-        return Dict(:firm_value => Dict(zip([:value, :xsym, :color],
-                                          [fv_xvar, xsym_dict[:fv], fv_color])),
-                    :MBR => Dict(zip([:value, :xsym, :color],
-                                   [mbr_xvar, xsym_dict[:mbr], mbr_color])),
-                    :misrep => Dict(zip([:value, :xsym, :color],
-                                        [misrep_xvar, xsym_dict[:misrep], misrep_color])))
+
+        if .&(isnan(misrep_xvar), abs(fv_xvar - mbr_xvar) < 1e-5)
+
+            xvar_label = xvar == :sigmah ? latexstring("\$ \\sigma_l \$") : ""
+            return Dict(:misrep => Dict(zip([:value, :xsym, :color],
+                                            [misrep_xvar, xvar_label, misrep_color])))
+        elseif .&(abs(fv_xvar - misrep_xvar) < 1e-5, abs(mbr_xvar - misrep_xvar) < 1e-5)
+            # if isnan(cvm_misrep_xvar)
+            #     xvar_label = xvar == :sigmah ? latexstring("\$ \\sigma_l \$") : ""
+            # else
+            #     xvar_label = latexstring(xsym_dict[:fv],  " = ",
+            #                              xsym_dict[:mbr], " = ", xsym_dict[:misrep])
+            # end
+            xvar_label = xvar == :sigmah ? latexstring("\$ \\sigma_l \$") : ""
+           
+            return Dict(:misrep => Dict(zip([:value, :xsym, :color],
+                                             [misrep_xvar, xvar_label, misrep_color])))
+       else
+            return Dict(:firm_value => Dict(zip([:value, :xsym, :color],
+                                                [fv_xvar, xsym_dict[:fv], fv_color])),
+                        :MBR => Dict(zip([:value, :xsym, :color],
+                                         [mbr_xvar, xsym_dict[:mbr], mbr_color])),
+                        :misrep => Dict(zip([:value, :xsym, :color],
+                                            [misrep_xvar, xsym_dict[:misrep], misrep_color])))
+        end
     else
         misrep1_xvar = minimum([cvm_misrep_xvar, svm_misrep_xvar])
         misrep2_xvar = maximum([cvm_misrep_xvar, svm_misrep_xvar])
-        
+
         return Dict(:firm_value => Dict(zip([:value, :xsym, :color],
                                           [fv_xvar, xsym_dict[:fv], fv_color])),
                     :MBR => Dict(zip([:value, :xsym, :color],
@@ -219,8 +238,9 @@ box_color = "#EE0839"
 # ** Misrepresentation Plots ################################################
 rmp_plots_title_params_order =  [:mu_b, :m, :xi, :kappa, :sigmal]
 rmp_fn_prefix = "rmp"
-rmp_full_info_prefix = "fi"
-rmp_misrep_prefix = "misrep"
+nrmp_fn_prefix = "nrmp"
+full_info_prefix = "fi"
+misrep_prefix = "misrep"
 rmp_fig_aspect = .5
 rmp_multi_plot_fig_size = (10., 8.)
 rmp_multi_plot_figpad = .9
@@ -1514,16 +1534,22 @@ end
 
 
 function rmp_plot_dirs(yvars::Array{Symbol, 1}, xvar::Symbol;
+                       nrmp::Bool=false,
                        m::Float64=NaN,
                        rf_model::String="svm", 
                        main_dir_path::String=main_dir_path,
                        plots_dir::String=plots_dir,
+                       nrmp_plots_dir::String=nrmp_plots_dir,
                        rmp_plots_dir::String=rmp_plots_dir,
                        misrep::Bool=false,
                        fname_ext::String=rmp_fname_ext)
     plots_path = string(main_dir_path, "/", plots_dir)
-    fig_path = string(plots_path, "/", rmp_plots_dir)
-    
+    if nrmp
+        fig_path = string(plots_path, "/", nrmp_plots_dir)
+    else
+        fig_path = string(plots_path, "/", rmp_plots_dir)
+    end
+   
     m_val = "all"
     if !isnan(m)
         m_val = str_format_fun(comb_folder_dict[:m][2], m)
@@ -1540,17 +1566,17 @@ function rmp_plot_dirs(yvars::Array{Symbol, 1}, xvar::Symbol;
     # FileName
     yvars_fig_name = join([obj_fun_dict[y] for y in yvars], "_")
 
-    type_prefix = rmp_full_info_prefix
+    type_prefix = full_info_prefix
     if misrep
-        type_prefix = rmp_misrep_prefix
+        type_prefix = misrep_prefix
     end
 
-
+    fn_prefix = nrmp ? nrmp_fn_prefix : rmp_fn_prefix
     if rf_model == "svm"
-        fig_name = string(rmp_fn_prefix, "_", type_prefix, "_",
+        fig_name = string(fn_prefix, "_", type_prefix, "_",
                           yvars_fig_name, "_", xvar,".", fname_ext)
     elseif rf_model == "cvm"
-        fig_name = string("cvm_", rmp_fn_prefix, "_", type_prefix, "_",
+        fig_name = string("cvm_", fn_prefix, "_", type_prefix, "_",
                           yvars_fig_name, "_", xvar,".", fname_ext)
     else
         println("Wrong Risky Firm Model. Please enter 'cvm' or 'svm'. Exiting...")
@@ -1566,6 +1592,7 @@ end
 function plot_cvm_curve(ax, xvar::Symbol, yvar::Symbol,
                         sfdf::DataFrame,
                         text_xloc::Float64, text_yloc::Float64;
+                        nrmp::Bool=false,
                         xgrid::StepRangeLen{Float64,
                                             Base.TwicePrecision{Float64},
                                             Base.TwicePrecision{Float64}}=range(.0, stop=.0, length=0))
@@ -1593,12 +1620,20 @@ function plot_cvm_curve(ax, xvar::Symbol, yvar::Symbol,
     
 
     # Add Legend to the Curve
-    if xvar == :iota
+    if nrmp
+        if xvar == :sigmah
+            cvm_label = latexstring("\$", cvs_xlabels[:lambda][1], "= 0.\$")
+        else
+            text_xloc = .95 * text_xloc
+            cvm_label = latexstring("\$", cvs_xlabels[:sigmah][1], "= \\sigma_l = " , sfdf[1, :sigmal], "\$")
+        end
+    elseif xvar == :iota
         cvm_label = latexstring("\$", cvs_xlabels[:iota][1], "=", cvm_curve_label, "\$")
     else #if xvar == :sigmah
         cvm_label = latexstring("\$", cvs_xlabels[:iota][1], "=",
                                 str_format_fun(cvs_xlabels[:iota][2], sfdf[1, :iota]), "\$ (b.p.)")
     end
+
     ax.text(text_xloc, text_yloc,
             cvm_label, fontsize=10, va="bottom")
 
@@ -1611,9 +1646,10 @@ function plot_svm_curve(ax, xvar::Symbol, yvar::Symbol,
                         text_xloc::Float64, text_yloc::Float64,
                         xgrid::StepRangeLen{Float64,
                                               Base.TwicePrecision{Float64},
-                                              Base.TwicePrecision{Float64}})
+                                            Base.TwicePrecision{Float64}};
+                        nrmp::Bool=false)
 
-    if size(rfdf, 1) == 1   
+    if size(rfdf, 1) == 1
         ax.axhline(rfdf[1, yvar], 
                    color=svm_curve_color,
                    linewidth=1, 
@@ -1636,7 +1672,19 @@ function plot_svm_curve(ax, xvar::Symbol, yvar::Symbol,
 
 
     # Add Legend to the Curve
-    if xvar == :iota
+    if nrmp
+        if xvar == :sigmah
+            svm_label = latexstring("\$",
+                                    ModelPlots.cvs_xlabels[:lambda][1],
+                                    "\$ = ",
+                                    [x for x in unique(rfdf[:, :lambda]) if !isnan(x)][1])
+        else
+            svm_label = latexstring("\$",
+                                ModelPlots.cvs_xlabels[:sigmah][1],
+                                "\$ = ",
+                                [x for x in unique(rfdf[:, :sigmah]) if !isnan(x)][1])
+        end
+    elseif xvar == :iota
         if !isnan(rfdf[1, :sigmah])
             svm_label = latexstring("(\$", 
                                     ModelPlots.cvs_xlabels[:iota][1], ", ",
@@ -1773,7 +1821,7 @@ function plot_vlines(ax, xvar;
                                 svm_misrep_xvar=svm_misrep_xvar,
                                 misrep_color=misrep_color)
 
-   
+  
     xkeys = [x for x in keys(vldict) if .&(!isnan(vldict[x][:value]), !isinf(vldict[x][:value]))] 
     minor_ticks = [vldict[x][:value] for x in xkeys]
     minor_labels = [vldict[x][:xsym] for x in xkeys]
@@ -1875,7 +1923,7 @@ function color_misrep_region_fun(ax,
                                  text_yloc::Float64)
     trans = PyPlot.matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
 
-    if any([isnan(cvm_misrep_xvar), isnan(svm_misrep_xvar)])
+    if any([isnan(cvm_misrep_xvar), isnan(svm_misrep_xvar)]) || abs(cvm_misrep_xvar - svm_misrep_xvar) < 1e-5
         misrep_xvar = isnan(cvm_misrep_xvar) ? svm_misrep_xvar : cvm_misrep_xvar
         ax.fill_between(xgrid, 0, 1, transform=trans,
                     where=xgrid .>= misrep_xvar,
@@ -1967,7 +2015,7 @@ function color_regions_fun(ax, xvar::Symbol,
     # Misrepresentation Region
     # Misrepresentation MBR > FI MBR
     if .&(any([!isnan(cvm_misrep_xvar), !isnan(svm_misrep_xvar)]), color_misrep_region)
-        if any([isnan(cvm_misrep_xvar), isnan(svm_misrep_xvar)])
+        if any([isnan(cvm_misrep_xvar), isnan(svm_misrep_xvar)]) || abs(cvm_misrep_xvar - svm_misrep_xvar) < 1e-5
             misrep_xvar = isnan(cvm_misrep_xvar) ? svm_misrep_xvar : cvm_misrep_xvar
             xloc = .5 * misrep_xvar + .5 * xmax
         else
@@ -1990,7 +2038,8 @@ function rmp_subplotfun(fig::Figure, xvar::Symbol,
                         rfdf::DataFrame,
                         xgrid::StepRangeLen{Float64,
                                               Base.TwicePrecision{Float64},
-                                              Base.TwicePrecision{Float64}};
+                                            Base.TwicePrecision{Float64}};
+                        nrmp::Bool=false,
                         ax_subplot::Int64=111,
                         interp_yvar::Bool=false,
                         misrepdf::DataFrame=DataFrame(),
@@ -2017,15 +2066,15 @@ function rmp_subplotfun(fig::Figure, xvar::Symbol,
 
         if interp_yvar
             ax = plot_cvm_curve(ax, xvar, yvar, sfdf, xloc, yloc;
-                                xgrid=xgrid)
+                                xgrid=xgrid, nrmp=nrmp)
         else
-            ax = plot_cvm_curve(ax, xvar, yvar, sfdf, xloc, yloc)
+            ax = plot_cvm_curve(ax, xvar, yvar, sfdf, xloc, yloc; nrmp=nrmp)
         end
     else
         # Plot SVM Curve
         xloc = .95 * rfdf[end, xvar]
         yloc = .1 * (maximum(rfdf[:, yvar]) - minimum(rfdf[:, yvar])) + minimum(rfdf[:, yvar])
-        ax = plot_svm_curve(ax, xvar, yvar, rfdf, xloc, yloc, xgrid)
+        ax = plot_svm_curve(ax, xvar, yvar, rfdf, xloc, yloc, xgrid; nrmp=nrmp)
         # ##############################################################
     end
     # ##############################################################
@@ -2049,12 +2098,12 @@ function rmp_subplotfun(fig::Figure, xvar::Symbol,
         if .&(!isempty(misrepdf), yvar == :MBR)
             yloc = yloc - .125 * (rfdf[end, yvar] - ymin)
         end
-        ax = plot_svm_curve(ax, xvar, yvar, rfdf, xloc, yloc, xgrid)
+        ax = plot_svm_curve(ax, xvar, yvar, rfdf, xloc, yloc, xgrid; nrmp=nrmp)
         # ##############################################################
     else
-        xloc = .95 * xmax 
-        yloc = sfdf[1, yvar] 
-        ax = plot_cvm_curve(ax, xvar, yvar, sfdf, xloc, yloc)
+        xloc = .95 * xmax
+        yloc = sfdf[1, yvar]
+        ax = plot_cvm_curve(ax, xvar, yvar, sfdf, xloc, yloc; nrmp=nrmp)
     end
     # ###################################################################
 
@@ -2115,6 +2164,7 @@ function rmp_core_plot(fig, xvar::Symbol, yvars::Array{Symbol,1},
                                               Base.TwicePrecision{Float64},
                                               Base.TwicePrecision{Float64}},
                        subplots::Int64;
+                       nrmp::Bool=false,
                        interp_yvar::Bool=false,
                        misrepdf::DataFrame=DataFrame(),
                        fv_xvar::Float64=NaN,
@@ -2148,6 +2198,7 @@ function rmp_core_plot(fig, xvar::Symbol, yvars::Array{Symbol,1},
 
         ax = rmp_subplotfun(fig, xvar, yvar,
                             sfdf, rfdf, xgrid;
+                            nrmp=nrmp,
                             ax_subplot=ax_subplot,
                             interp_yvar=interp_yvar,
                             misrepdf=misrepdf,
@@ -2208,6 +2259,7 @@ end
 function rmp_fi_plotfun(xvar::Symbol, yvars::Array{Symbol,1},
                         sfdf::DataFrame,
                         rfdf::DataFrame;
+                        nrmp::Bool=false,
                         xgrid::StepRangeLen{Float64,
                                             Base.TwicePrecision{Float64},
                                             Base.TwicePrecision{Float64}}=range(.0,
@@ -2257,6 +2309,7 @@ function rmp_fi_plotfun(xvar::Symbol, yvars::Array{Symbol,1},
     fig = rmp_core_plot(fig, xvar, yvars,
                         sfdf, rfdf, xgrid,
                         subplots;
+                        nrmp=nrmp,
                         interp_yvar=interp_yvar,
                         misrepdf=misrepdf,
                         fv_xvar=fv_xvar,
@@ -2299,6 +2352,7 @@ function rmp_fi_plotfun(xvar::Symbol, yvars::Array{Symbol,1},
     if save_fig
         rf_model = isnan(rfdf[end, :lambda]) ? "cvm" : "svm"
         fig_folder, fig_name = rmp_plot_dirs(yvars, xvar;
+                                             nrmp=nrmp,
                                              m=rfdf[1, :m],
                                              rf_model=rf_model,
                                              main_dir_path=main_dir_path,

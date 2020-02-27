@@ -34,7 +34,8 @@ using JointEqStructs: BondContract,
                       JointFirms,
                       JointKStruct,
                       type_fun,
-                      get_empty_df
+    get_empty_df,
+    get_type_identifiers
 
 # * Containers
 types_order = vcat([Symbol(x, :_, y) for x in [:st, :rt], 
@@ -386,12 +387,22 @@ function compute_fi_eq(jf, df::DataFrame, ft::Symbol, rmp::Symbol)
     tmp = df[cond, :]
     
     fr = getfield(getfield(jf, ft), rmp).fr
+
+    # Get Identifiers
+    pd = get_type_identifiers(jf, ft)
+    
     if .&(isnan(fv(tmp)), !isnothing(fr))
         tmp = find_optimal_bond_measure(fr, jf.bc)
         tmp[!, :eq_type] .= :full_info
         tmp[!, :datetime] .= Dates.now()
         tmp[!, :type] .= ft
         tmp[!, :rmp] .= rmp
+
+        # Add Type ID Params
+        tmp[!, :rm_iota] .= pd[:rm_iota]
+        tmp[!, :nrm_lambda] .= pd[:nrm_lambda]
+        tmp[!, :nrm_sigmah] .= pd[:nrm_sigmah]
+        
         df = vcat([df[cond .== false, :], tmp]...)
     end
         
@@ -435,6 +446,7 @@ function get_fi_eq(jf; fidf::DataFrame=DataFrame())
             end
             fidf = vcat([fidf, DataFrame(tmp)]...)
         end
+        
         fieqdf = vcat([fieqdf, DataFrame(tmp[argmax(tmp[:, :firm_value]), :])]...)
     end
     
