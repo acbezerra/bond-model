@@ -11,7 +11,7 @@ push!(LOAD_PATH, module_path)
 
 # include("FullInfoEq.jl")
 
-module JointEq 
+module JointEq
 
 using Distributed
 using Dierckx
@@ -20,6 +20,7 @@ using Printf
 using DataFrames
 using CSV
 using Dates
+
 
 using ModelObj: set_opt_k_struct,
                 Firm, grid_creator,
@@ -35,8 +36,10 @@ using BondPrInterp: get_pv_rfdebt,
                     get_cvm_bond_price,
                     get_cvm_debt_price,
                     get_svm_bond_price,
-                    get_svm_debt_price
-    
+                    get_svm_debt_price,
+                    get_bond_yield,
+                    get_bond_spread
+
 using EqFinDiff: get_cvm_eq,
                  get_eq_Vmax,
                  eq_set_k_struct,
@@ -48,6 +51,8 @@ using Batch: BatchObj,
              get_bt,
              get_bt_svm,
              get_bt_mobj,
+             load_cvm_opt_results_df,
+             load_svm_opt_results_df,
              get_batch_comb_num,
              opt_k_struct_df_name,
              opt_k_struct_df_coltypes,
@@ -87,7 +92,7 @@ using JointEqStructs: FirmSpecificParams,
                       file_name_par_list, jks_eq_fd_cols,
                       eq_type_dict, dup_rows_params, update_jks,
                       form_firms_jks, is_svm, get_empty_df,
-                      reshape_sf_rf_df, reshape_joint_df, load_joint_eqdf, 
+                      reshape_sf_rf_df, reshape_joint_df, load_joint_eqdf,
                       fi_results_extractor, misrep_results_extractor,
                       jeq_results_extractor, get_jks_id_cols,
     round_value, get_joint_types_dfs, form_joint_types,
@@ -165,7 +170,7 @@ mutable struct JointEqParams
     fcp::TypesCommonParams
 end
 
-empty_jep = JointEqParams(vcat(fill(NaN,3), 
+empty_jep = JointEqParams(vcat(fill(NaN,3),
                                FirmSpecificParams(fill(NaN,4)...),
                                FirmSpecificParams(fill(NaN,4)...),
                                TypesCommonParams(fill(NaN, 7)...))...)
@@ -200,7 +205,7 @@ function jfs_common_specific_params(k_otc::Float64,
         if !isnan(rt_iota)
             iota_vec = unique([st_iota, rt_iota])
         else
-            iota_vec = [x for x in cvm_param_values_dict[:iota] 
+            iota_vec = [x for x in cvm_param_values_dict[:iota]
                         if .&(x >= st_iota, x <= 20. * 1e-4)]
         end
         lambda_vec = [x for x in [st_lambda, rt_lambda] if !isnan(x)]
@@ -213,14 +218,14 @@ function jfs_common_specific_params(k_otc::Float64,
         end
 
         # Load Unconstrained Results
-        cvmdf, svmdf = get_joint_types_dfs(common_params, iota_vec, 
+        cvmdf, svmdf = get_joint_types_dfs(common_params, iota_vec,
                                            lambda_vec, sigmah_vec;
                                            firm_obj_fun=firm_obj_fun)
     else
         iota_vec = unique(vcat(cvmdf[:, :iota], svmdf[:, :iota]))
-        lambda_vec = [x for x in unique(vcat(cvmdf[:, :lambda], svmdf[:, :lambda])) 
+        lambda_vec = [x for x in unique(vcat(cvmdf[:, :lambda], svmdf[:, :lambda]))
                       if !isnan(x)]
-        sigmah_vec = [x for x in unique(vcat(cvmdf[:, :sigmah], svmdf[:, :sigmah])) 
+        sigmah_vec = [x for x in unique(vcat(cvmdf[:, :sigmah], svmdf[:, :sigmah]))
                       if !isnan(x)]
     end
 
@@ -230,7 +235,7 @@ function jfs_common_specific_params(k_otc::Float64,
                                                                    :rt_iota => iota_vec,
                                                                    :rt_lambda => lambda_vec,
                                                                    :rt_sigmah=> sigmah_vec)
-    
+
     return Dict(:common_params => common_params,
                 :type_specific_params => type_specific_params,
                 :cvmdf => cvmdf,
@@ -250,11 +255,12 @@ function otc_ep_jfs(k_otc::Float64,
                     rt_lambda::Float64=NaN,
                     rt_sigmah::Float64=NaN,
                     firm_obj_fun::Symbol=:firm_value,
-                    common_params::Dict{Symbol,Array{Float64,1}}=Dict{Symbol,Array{Float64,1}}())
-    
+                    common_params::Dict{Symbol,Array{Float64,1}}=Dict{Symbol,Array{Float64,1}}(),
+                    tol::Float64=1e-9)
+
     # Auxiliary Functions
     f1(df, x) = isnan.(df[:, x])
-    f2(df, x, val) = abs.(df[:, x] .- val) .<1e-5
+    f2(df, x, val) = abs.(df[:, x] .- val) .< tol
     f(df, d, x) = isnan(d[x]) ? f1(df, x) : f2(df, x, d[x])
 
     # Get Common and Specific Parameters and CVM and SVM results
@@ -269,7 +275,6 @@ function otc_ep_jfs(k_otc::Float64,
 
     tcdf = get_types_comb_df(pd[:type_specific_params])
 
-
     # My choice
     rt_values = Dict{Symbol, Float64}(:rt_iota => rt_iota,
                                       :rt_lambda => rt_lambda,
@@ -283,7 +288,7 @@ function otc_ep_jfs(k_otc::Float64,
         # end
         # rt_values[x] = isnan(rt_values[x]) ? min_val : rt_values[x]
         rt_values[x] = isnan(rt_values[x]) ? 0.0 : rt_values[x]
-        
+
         # Extract Rows with combination numbers
         cond = .&(cond, f(tcdf, rt_values, x))
     end
@@ -291,8 +296,8 @@ function otc_ep_jfs(k_otc::Float64,
 
 
     # Form types dictionary
-    tmp = tcdf[abs.(tcdf[:, :pair_num] .- tc_pair) .< 1e-5, :]
-    typesdict = Dict{Symbol, Float64}([x => tmp[:, x][1] for x in names(tmp)])
+    tmp = tcdf[abs.(tcdf[:, :pair_num] .- tc_pair) .< tol, :]
+    typesdict = Dict{Symbol, Float64}([Symbol(x) => tmp[:, x][1] for x in names(tmp)])
     # # #########################################################
 
 
@@ -333,7 +338,7 @@ function ep_pool_sep_eq(ep_jf, ep_jks,
         println("Please set equilibrium_type to pooling or separting. Exiting...")
         return
     end
-    
+
     pmdf = find_joint_optimal_bond_measure(ep_jf, deepcopy(ep_jks),
                                            fi_sf_mu_b,
                                            fi_rf_mu_b,
@@ -345,8 +350,8 @@ function ep_pool_sep_eq(ep_jf, ep_jks,
                                            mu_bN=mu_bN, mu_bN2=mu_bN2,
                                            spline_k=spline_k,
                                            spline_bc=spline_bc)
-    
-    return pmdf 
+
+    return pmdf
 end
 
 
@@ -439,7 +444,7 @@ function ep_constructor(jep, sf_bt, rf_bt;
                         ep_p::Float64=NaN,
                         run_misrep::Bool=false,
                         run_pool_eq::Bool=true,
-                        run_sep_eq::Bool=true,                       
+                        run_sep_eq::Bool=true,
                         sf_obj_fun::Symbol=:firm_value,
                         rf_obj_fun::Symbol=:MBR,
                         fi_fpath_name::String="",
@@ -473,7 +478,7 @@ function ep_constructor(jep, sf_bt, rf_bt;
         rf_bt.mi._svm_dict[var] = getfield(jep.fcp, var)
     end
     sf_bt.mi._svm_dict[:sigmal] = jep.sfp.sigmal
-    rf_bt.mi._svm_dict[:sigmal] = jep.rfp.sigmal   
+    rf_bt.mi._svm_dict[:sigmal] = jep.rfp.sigmal
 
     # Form EP Safe Firm
     ep_sf_comb_num = get_batch_comb_num(sf_bt;
@@ -504,10 +509,10 @@ function ep_constructor(jep, sf_bt, rf_bt;
     if .&(isfile(fi_fpath_name), !rerun_full_info)
         fidf = CSV.read(fi_fpath_name)
                         #types=fidf_col_types)
-        
+
         # Slice DataFrame
-        ep_sf_eqdf = DataFrame(fidf[1, :]) 
-        ep_rf_eqdf = DataFrame(fidf[2, :]) 
+        ep_sf_eqdf = DataFrame(fidf[1, :])
+        ep_rf_eqdf = DataFrame(fidf[2, :])
 
         # Capture Full Information Optimal mu_b and MBR ###################
         fi_sf_mu_b = ep_sf_eqdf[1, :mu_b]
@@ -542,7 +547,7 @@ function ep_constructor(jep, sf_bt, rf_bt;
     end
     # #################################################################
 
-            
+
     # Electronic Platform Misrepresentation ###########################
     # Do risky firms have an incentive to copy the capital structure
     # of the safe firms?
@@ -552,7 +557,7 @@ function ep_constructor(jep, sf_bt, rf_bt;
         if !isnan(fi_sf_mu_b)
             setfield!(misrep_jks, :mu_b, fi_sf_mu_b)
         end
-        
+
         ep_misrep_eqdf = find_joint_optimal_vb(ep_jf.sf, ep_jf.rf, misrep_jks;
                                                mu_b=fi_sf_mu_b,
                                                rerun_fi_vb=true)
@@ -639,7 +644,7 @@ function otc_constructor(jep, sf_bt, rf_bt; otc_m::Float64=NaN)
         sf_bt.mi._svm_dict[var] = getfield(jep.fcp, var)
         rf_bt.mi._svm_dict[var] = getfield(jep.fcp, var)
     end
-    
+
     # Form OTC Safe Firm
     otc_sf_comb_num = get_batch_comb_num(sf_bt;
                                          iota=jep.sfp.iota,
@@ -684,7 +689,7 @@ function ep_otc_constructor(mu_s::Float64,
                             sf_obj_fun::Symbol=:firm_value,
                             rf_obj_fun::Symbol=:firm_value,
                             run_pool_eq::Bool=true,
-                            run_sep_eq::Bool=true,                                              
+                            run_sep_eq::Bool=true,
                             sfp=FirmSpecificParams(fill(NaN, 3)...),
                             rfp=FirmSpecificParams(fill(NaN, 3)...),
                             s_iota::Float64=NaN,
@@ -734,13 +739,13 @@ function ep_otc_constructor(mu_s::Float64,
     end
     # #################################################################
 
-    
+
     # #################################################################
     # Safe and Risky Firms' Models ####################################
     # #################################################################
     cbt = get_bt(;comb_num=1, model="cvm")
     sbt = get_bt(;comb_num=1, model="svm")
-    
+
     # Identify Firm Model
     sf_model = .&(!isnan(jep.sfp.iota),!isnan(jep.sfp.lambda)) ? "svm" : "cvm"
     rf_model = .&(!isnan(jep.rfp.iota),!isnan(jep.rfp.lambda)) ? "svm" : "cvm"
@@ -748,11 +753,11 @@ function ep_otc_constructor(mu_s::Float64,
     # Set Models
     sf_bt = sf_model == "cvm" ? cbt : sbt
     rf_bt = rf_model == "cvm" ? cbt : sbt
-    # #################################################################   
-
-    
     # #################################################################
-    # Electronic Platform ############################################# 
+
+
+    # #################################################################
+    # Electronic Platform #############################################
     # #################################################################
     # Measure of Firms and Standardized Bond
     ep_jks = store_ep_params(jep.mu_s;
@@ -772,14 +777,14 @@ function ep_otc_constructor(mu_s::Float64,
                         ep_c=ep_c,
                         ep_p=ep_p,
                         run_pool_eq=run_pool_eq,
-                        run_sep_eq=run_sep_eq,                       
+                        run_sep_eq=run_sep_eq,
                         sf_obj_fun=sf_obj_fun,
                         rf_obj_fun=rf_obj_fun)
     # #################################################################
 
-    
-    # #################################################################   
-    # Over-the-Counter Markets ########################################   
+
+    # #################################################################
+    # Over-the-Counter Markets ########################################
     # #################################################################
     otc = otc_constructor(jep, sf_bt, rf_bt; otc_m=otc_m)
     # #################################################################
@@ -802,7 +807,7 @@ function get_joint_k_struct!(sf, rf;
     # else isnan(jks.mu_s)
     #     jks.mu_s = jf.jks.mu_s
     # end
-    
+
     if !isnan(mu_b)
         setfield!(jks, :mu_b, mu_b)
     end
@@ -812,7 +817,7 @@ function get_joint_k_struct!(sf, rf;
     elseif isnan(jks.m)
         setfield!(jks, :m, jf.bc.m)
     end
-    
+
     if !isnan(c)
         setfield!(jks, :c, c)
     elseif isnan(jks.c)
@@ -824,8 +829,8 @@ function get_joint_k_struct!(sf, rf;
     elseif isnan(jks.p)
         setfield!(jks, :p, jf.bc.p)
     end
-   
-    return jks 
+
+    return jks
 end
 
 
@@ -845,7 +850,7 @@ function joint_eq_set_k_struct!(sf, rf, jks;
                                 vbN::Int64=20)
 
 
-    
+
     # Update Joint Capital Structure Struct
     jks = update_jks(jks; mu_s=mu_s,
                      mu_b=mu_b, m=m,
@@ -867,7 +872,7 @@ function joint_eq_set_k_struct!(sf, rf, jks;
                                    fi_rt_vb=fi_rt_vb,
                                    lb=lb, ub=ub,
                                    vbN=vbN)
-    
+
     # setfield!(jks, :st_vb, maximum(x->isnan(x) ? -Inf : x, [st_vb, jks.fi_st_vb]))
 
     # rt_vb = maximum([minimum(x->isnan(x) ? Inf : x, [rt_vb, jks.fi_rt_vb]),
@@ -891,16 +896,16 @@ function joint_eq_set_k_struct!(sf, rf, jks;
     elseif !isnan(mu_s)
         setfield!(jks, :mu_s, mu_s)
     end
-    
+
     return jks
 end
 
 
-function get_type_contingent_vbs(vbl::Float64, 
-                                 fi_st_vb::Float64, 
+function get_type_contingent_vbs(vbl::Float64,
+                                 fi_st_vb::Float64,
                                  fi_rt_vb::Float64;
                                  sf_defaults_first::Bool=true)
-    
+
     st_vb = fi_st_vb
     rt_vb = fi_rt_vb
     if vbl > maximum([fi_st_vb, fi_rt_vb])
@@ -915,23 +920,23 @@ function get_type_contingent_vbs(vbl::Float64,
         st_vb = vbl
         rt_vb = !sf_defaults_first ? vbl : fi_rt_vb
     end
-    
+
     return st_vb, rt_vb
 end
 
 
-function interp_optimal_vbs(jks, df::DataFrame; 
-                            sf_defaults_first::Bool=true, 
+function interp_optimal_vbs(jks, df::DataFrame;
+                            sf_defaults_first::Bool=true,
                             vbN::Int64=10^5,
                             spline_k::Int64=3,
                             spline_bc::String="extrapolate")
 
     # Form Refined Grid of Unique vbl values
     vb_grid = range(minimum(df[:, :vbl]), stop=maximum(df[:, :vbl]), length=vbN)
-    
+
     # Interpolate Equity and Equity Derivative Functions
     tmp = Dict()
-    for var in [:rf_eq_deriv, :sf_eq_deriv] 
+    for var in [:rf_eq_deriv, :sf_eq_deriv]
         tmp[var] = Dierckx.Spline1D(df[:, :vbl], df[:, var]; k=spline_k, bc=spline_bc)
     end
 
@@ -943,39 +948,39 @@ function interp_optimal_vbs(jks, df::DataFrame;
 end
 
 
-function refine_contingent_vbs(sf, rf, jks, 
-                               st_vb::Float64, rt_vb::Float64; 
+function refine_contingent_vbs(sf, rf, jks,
+                               st_vb::Float64, rt_vb::Float64;
                                sf_defaults_first::Bool=false,
                                N::Int64=7,
-                               spline_k::Int64=3, 
+                               spline_k::Int64=3,
                                spline_bc::String="extrapolate")
-    
+
     tvb = !(sf_defaults_first) ? rt_vb : st_vb
     tvar = !(sf_defaults_first) ? :rt_vb : :st_vb
     cond_var = !(sf_defaults_first) ? :st_vb : :rt_vb
-    
+
     dfL = []
     for vb in range(.95 * tvb, stop = 1.05 * tvb, length=N)
         st_vb, rt_vb = get_type_contingent_vbs(vb, jks.fi_st_vb,
-                                               jks.fi_rt_vb; 
+                                               jks.fi_rt_vb;
                                                sf_defaults_first=sf_defaults_first)
         tmp = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
         push!(dfL, tmp)
     end
     df = vcat(dfL...)
     cond = isnan.(df[:, cond_var])
-    
+
     tvb_grid = range(minimum(df[cond, tvar]), stop=maximum(df[cond, tvar]), length=10^5)
-    tvb_interp = Dierckx.Spline1D(df[cond, tvar], df[cond, :eq_deriv]; 
+    tvb_interp = Dierckx.Spline1D(df[cond, tvar], df[cond, :eq_deriv];
                                   k=spline_k, bc=spline_bc)
-    
-    
+
+
     opt_tvb = tvb_grid[argmin(abs.(tvb_interp(tvb_grid)))]
     st_vb, rt_vb = get_type_contingent_vbs(opt_tvb,
                                            jks.fi_st_vb,
-                                           jks.fi_rt_vb; 
+                                           jks.fi_rt_vb;
                                            sf_defaults_first=sf_defaults_first)
-    
+
     return joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
 end
 # ##########################################################
@@ -1015,7 +1020,7 @@ function store_joint_eq_parameters(mu_s::Float64,
             !isnan(getfield(rfp, :sigmah))])
         setfield!(jep, :rfp, rfp)
     end
-    
+
     # Set Firm Specific Parameters
     if !isnan(s_iota)
         setfield!(jep.sfp, :iota, s_iota)
@@ -1023,27 +1028,27 @@ function store_joint_eq_parameters(mu_s::Float64,
     if !isnan(s_lambda)
         setfield!(jep.sfp, :lambda, s_lambda)
     end
-    if !isnan(s_sigmal)    
+    if !isnan(s_sigmal)
         setfield!(jep.sfp, :sigmal, s_sigmal)
     else
         setfield!(jep.sfp, :sigmal, svm_param_values_dict[:sigmal][1])
     end
-    if !isnan(s_sigmah)    
+    if !isnan(s_sigmah)
         setfield!(jep.sfp, :sigmah, s_sigmah)
     end
-    
+
     if !isnan(r_iota)
         setfield!(jep.rfp, :iota, r_iota)
     end
     if !isnan(r_lambda)
         setfield!(jep.rfp, :lambda, r_lambda)
     end
-    if !isnan(r_sigmal)    
+    if !isnan(r_sigmal)
         setfield!(jep.rfp, :sigmal, r_sigmal)
     else
         setfield!(jep.rfp, :sigmal, svm_param_values_dict[:sigmal][1])
     end
-    if !isnan(r_sigmah)    
+    if !isnan(r_sigmah)
         setfield!(jep.rfp, :sigmah, r_sigmah)
     end
 
@@ -1069,7 +1074,7 @@ function store_ep_params(mu_s;
                          ep_p::Float64=NaN)
 
     setfield!(ep_jks, :mu_s, mu_s)
-    
+
     if !isnan(ep_m)
         setfield!(ep_jks, :m, ep_m)
     end
@@ -1081,30 +1086,30 @@ function store_ep_params(mu_s;
     end
 
     return ep_jks
-end        
-    
+end
+
 
 function check_param_consistency(jf)
-    # Common Parameters  
+    # Common Parameters
     parvec = [par for par in [:r, :xi, :kappa, :alpha] if
               abs.(get_param(jf.sf, par) - get_param(jf.rf, par)) > 1e-6]
-            
+
     if !isempty(parvec)
         [println(string(par, ": values do not match!")) for par in parvec]
         return false
     end
-    
+
     return true
 end
 
 
-function find_risky_combinations(svm::Firm; 
-                                 cvmdf::DataFrame=DataFrame(), 
+function find_risky_combinations(svm::Firm;
+                                 cvmdf::DataFrame=DataFrame(),
                                  svmdf::DataFrame=DataFrame())
     if isempty(svmdf)
         svmdf = get_bt(;model="svm", comb_num=1).bp.df
     end
-    
+
     # Reorder columns
     cols = vcat([:match, :model], names(svmdf))
 
@@ -1113,16 +1118,16 @@ function find_risky_combinations(svm::Firm;
 
     param_columns = [x for x in names(svmdf) if
                      !(x in [:comb_num, :m_comb_num])]
-    
+
     # Match SVM Values
     svm_common_cond = .&([abs.(svmdf[fn] .- get_param(svm, fn)) .< 1e-6
                           for fn in [:mu_b, :m, :kappa]]...)
-   
+
     if get_obj_model(svm) == "cvm"
         if isempty(cvmdf)
             cvmdf = get_bt(;model="cvm", comb_num=1).bp.df
         end
-        
+
         # Find CVM Combinations
         cvm_common_cond = .&([abs.(cvmdf[fn] .- get_param(svm, fn)) .< 1e-6
                               for fn in [:mu_b, :m, :kappa]]...)
@@ -1130,30 +1135,30 @@ function find_risky_combinations(svm::Firm;
         cvm_match = cvmdf[.&([cvm_common_cond, cvm_iota_cond]...), :]
         cvm_match[:model] = "cvm"
 
-        # Find Own Combination 
+        # Find Own Combination
         cvm_match[:match] = .&([abs.(cvm_match[fn] .- get_param(svm,fn)) .< 1e-6
                                 for fn in param_columns
                                 if !(fn in [:lambda, :sigmah])]...)
-        
+
         # Find SVM Combinations
         svm_match = svmdf[svm_common_cond, :]
         svm_match[:model] = "svm"
         svm_match[:match] = false
-        
+
         return vcat([cvm_match, svm_match]...)[cols]
     else
         # Find SVM Combinations
-        svm_shock_cond = .&([svmdf[fn] .>= get_param(svm, fn) 
+        svm_shock_cond = .&([svmdf[fn] .>= get_param(svm, fn)
                              for fn in [:lambda, :sigmah]]...)
 
         svm_match = svmdf[.&([svm_common_cond,
                               svm_shock_cond]...), :]
         svm_match[:model] = "svm"
 
-        # Find Own Combination 
+        # Find Own Combination
         svm_match[:match] = .&([abs.(svm_match[fn] .- get_param(svm,fn)) .< 1e-6
                                 for fn in param_columns]...)
-        
+
         return svm_match[cols]
     end
 end
@@ -1162,14 +1167,14 @@ end
 # ########################################################################
 function check_firm_dict(id)
     for idk in [:comb_num, :m_comb_num]
-        if !haskey(id, idk) 
+        if !haskey(id, idk)
             id[idk] = 0
         end
-    end    
+    end
     if !(:m in keys(id))
         id[:m] = NaN
     end
-    
+
     # Must have at least one valid identifier:
     id_cond = (id[:comb_num] > 0) || .&(!isnan(id[:m]), id[:m_comb_num] > 0)
     if !id_cond
@@ -1181,9 +1186,9 @@ end
 # kappa must match!
 function check_risky_firm_dict(bts, idr)
     idr, id_cond1 = check_firm_dict(idr)
-    
+
     # Check if has at at least one valid identifier:
-    id_cond2 = sum([x in keys(idr) for x in [:kappa, :lambda, :sigmah]]) > 0 
+    id_cond2 = sum([x in keys(idr) for x in [:kappa, :lambda, :sigmah]]) > 0
     if id_cond1
         println("Risky Firm will be constructed from identifiers!")
         return idr, true
@@ -1208,7 +1213,7 @@ end
 
 # function round_value(x::Float64)
 #     xr_vec = [floor(x), (ceil(x) + floor(x))/2, ceil(x)]
-#     diffs = [x-xr_vec[1], abs(x-xr_vec[2]), xr_vec[3] - x]    
+#     diffs = [x-xr_vec[1], abs(x-xr_vec[2]), xr_vec[3] - x]
 #     return xr_vec[argmin(diffs)]
 # end
 
@@ -1225,7 +1230,7 @@ function get_jeq_mus_fname(jks_fpath::String; eq_type::String="pooling", mu_s::F
 
     musn="_tmp"
     if !isnan(mu_s)
-        musn = string(jeq_comb_folder_dict[:mu_s][1], 
+        musn = string(jeq_comb_folder_dict[:mu_s][1],
                       str_format_fun(jeq_comb_folder_dict[:mu_s][2], mu_s))
     end
     return string(jks_fpath, "/", eq_type_dict[eq_type][:fn_prefix], musn, ".csv")
@@ -1251,8 +1256,8 @@ function collect_joint_eq_files(jks_fpath::String; eq_type::String="full_info")
         println("Exiting...")
         return
     end
-    
-    return [CSV.read(string(jks_fpath, "/", x)) for x in readdir(jks_fpath) 
+
+    return [CSV.read(string(jks_fpath, "/", x)) for x in readdir(jks_fpath)
                 if occursin(string(eq_type_dict[eq_type][:fn_prefix], "_"), x)]
 end
 
@@ -1262,18 +1267,18 @@ function process_results(jks_fpath::String, eq_type::String)
         println("Please set equilibrium_type to 'full_info', 'misrep', 'pooling' or 'separating'. Exiting...")
         return
     end
-    
-    df_l = [CSV.read(string(jks_fpath, "/", x)) for x in readdir(jks_fpath) 
+
+    df_l = [CSV.read(string(jks_fpath, "/", x)) for x in readdir(jks_fpath)
             if occursin(string(eq_type_dict[eq_type][:fn_prefix], "_"), x)]
     df = vcat(df_l...)
     if eq_type == "full_info"
         df = df[nonunique(df[:, [:iota, :sigmah]]) .== false, :]
         df = vcat(sort(df[isnan.(df[:, :sigmah]), :], [:iota]),
-                  sort(df[df[:, :iota] .== .0, :], [:sigmah]))   
+                  sort(df[df[:, :iota] .== .0, :], [:sigmah]))
     else
         df = vcat(sort(df[isnan.(df[:, :r_sigmah]), :], [:r_iota]),
                   sort(df[df[:, :r_iota] .== .0, :], [:r_sigmah]))
-    end            
+    end
 end
 
 
@@ -1283,30 +1288,30 @@ end
 function identify_match(df::DataFrame, dfrow::DataFrame)
     compf = var -> abs.(df[:, var] .- dfrow[1, var]) .< 1e-6
     fspf = var -> isnan.(dfrow[1, var]) ? isnan.(df[:, var]) : compf(var)
-    
+
     fcp_cond  = [compf(var) for var in commoncols]
     fsp_cond = [fspf(var) for var in fspcols]
-    
+
     return .&([.&(x...) for x in [fcp_cond, fsp_cond]]...)
 end
 
-    
+
 function identify_matching_row(df::DataFrame, svm)
     compf = var -> abs.(df[:, var] .- get_param(svm, var)) .< 1e-6
     fspf = var -> isnan.(get_param(svm, var)) ? isnan.(df[:, var]) : compf(var)
-    
+
     fcp_cond  = [compf(var) for var in commoncols]
     fsp_cond = [fspf(var) for var in fspcols]
-    
+
     return .&([.&(x...) for x in [fcp_cond, fsp_cond]]...)
 end
 
 
 function identify_match2(df::DataFrame, dfrow::DataFrame)
     compf = var -> abs.(df[:, var] .- dfrow[1, var]) .< 1e-6
-    scompf = (var, prefix) -> (abs.(df[:, Symbol(prefix, var)] .- 
+    scompf = (var, prefix) -> (abs.(df[:, Symbol(prefix, var)] .-
                                dfrow[1, Symbol(prefix, var)]) .< 1e-6)
-    fspf = (var, prefix) -> (isnan.(dfrow[1, Symbol(prefix, var)]) ? 
+    fspf = (var, prefix) -> (isnan.(dfrow[1, Symbol(prefix, var)]) ?
                              isnan.(df[:, Symbol(prefix, var)]) : scompf(var, prefix))
 
     # Check Parameters
@@ -1314,7 +1319,7 @@ function identify_match2(df::DataFrame, dfrow::DataFrame)
     sfsp_cond = [fspf(var, :s_) for var in fspcols]
     rfsp_cond = [fspf(var, :r_) for var in fspcols]
     epm_cond = [compf(var) for var in epmcols if var != :kappa]
-    
+
     return .&([.&(x...) for x in [fcp_cond, sfsp_cond, rfsp_cond, epm_cond]]...)
 end
 
@@ -1332,7 +1337,7 @@ function identify_matching_row2(df::DataFrame, jks, jf)
     sfsp_cond = [fspf(jf.sf, var, :s_) for var in fspcols]
     rfsp_cond = [fspf(jf.rf, var, :r_) for var in fspcols]
     epm_cond = [pcf(var) for var in epmcols if var != :kappa]
-    
+
     return .&([.&(x...) for x in [fcp_cond, sfsp_cond, rfsp_cond, epm_cond]]...)
 end
 # ##################################################################################
@@ -1351,7 +1356,7 @@ function slice_df_cond(df::DataFrame, svm, rerun::Bool)
     elseif .&(sum(row_cond) == 1, !rerun)
         println("Match found!")
     end
-        
+
     return row_cond, rerun
 end
 
@@ -1361,12 +1366,12 @@ function slice_full_info_dataframe(df::DataFrame, jks, svm; rerun::Bool=true)
 
     if rerun
         println("Generating results...")
-        dfrow = find_optimal_bond_measure(svm; jks=jks) 
+        dfrow = find_optimal_bond_measure(svm; jks=jks)
     else
         println("Extracting row...")
         dfrow = DataFrame(df[row_cond, :])
     end
-        
+
     return dfrow
 end
 
@@ -1392,7 +1397,7 @@ function slice_mps_dataframe(df::DataFrame, jks, jf; rerun::Bool=true)
         println("Extracting row...")
         dfrow = DataFrame(df[row_cond, :])
     end
-       
+
     return dfrow
 end
 # ###############################################################################
@@ -1400,7 +1405,7 @@ end
 
 function joint_eq_form_dataframes(;pool_list::Array{DataFrame,1}=[DataFrame()],
                                   sep_list::Array{DataFrame,1}=[DataFrame()])
-   
+
     pooldf = DataFrame()
     sepdf = DataFrame()
 
@@ -1417,7 +1422,7 @@ function joint_eq_form_dataframes(;pool_list::Array{DataFrame,1}=[DataFrame()],
 
     return pooldf, sepdf
 end
-                                    
+
 
 # Save DataFrames ###############################################################
 function update_file(fpath::String, fname::String, df::DataFrame)
@@ -1429,7 +1434,7 @@ function update_file(fpath::String, fname::String, df::DataFrame)
         else
             resdf = CSV.read(string(fpath, "/", fname, ".csv"); types=mps_col_types)
         end
-        
+
         for i in 1:nrow(df)
             # check if there is a match
             if fname == fidf_name
@@ -1437,7 +1442,7 @@ function update_file(fpath::String, fname::String, df::DataFrame)
             else
                 row_cond = identify_match2(resdf, DataFrame(df[i, :]))
             end
-            
+
             if sum(row_cond) == 1
                 println("Match found! Replacing row...")
                 resdf[row_cond, :] = DataFrame(df[i, :])
@@ -1445,12 +1450,12 @@ function update_file(fpath::String, fname::String, df::DataFrame)
                 println("No match found. Appending row...")
                 resdf = vcat(resdf, DataFrame(df[i, :]))
             else
-                println(string("Multiple matches for row ", i, 
+                println(string("Multiple matches for row ", i,
                                "! Please refine ID columns. Exiting..."))
                 return
             end
         end
-        
+
         # Save File
         println(string("Saving File ", fname," ..."))
         CSV.write(string(fpath, "/", fname, ".csv"), resdf)
@@ -1467,10 +1472,10 @@ function remove_dup_save_df(df::DataFrame, eq_type::String, jks_fpath::String)
         println("Exiting...")
         return
     end
-    
+
     df_fpath_name = string(jks_fpath, "/", df_name, ".csv")
     cols = (eq_type == "full_info") ? [x for x in names(df) if x != :datetime] : dup_rows_params
-    
+
     if (string(df_name, ".csv") in readdir(jks_fpath))
         df_all = CSV.read(df_fpath_name)
 
@@ -1487,9 +1492,9 @@ function remove_dup_save_df(df::DataFrame, eq_type::String, jks_fpath::String)
     end
     # Save file
     CSV.write(df_fpath_name, df_all)
-    
+
     return df_all
-end    
+end
 # ###############################################################################
 
 
@@ -1521,8 +1526,8 @@ end
 
 function get_jks_dir(jf)
     pcr = jf.bc.p/jf.bc.c
-    
-    return string(jeq_comb_folder_dict[:m][1], str_format_fun(jeq_comb_folder_dict[:m][2], jf.bc.m), 
+
+    return string(jeq_comb_folder_dict[:m][1], str_format_fun(jeq_comb_folder_dict[:m][2], jf.bc.m),
                   jeq_comb_folder_dict[:pcr][1], str_format_fun(jeq_comb_folder_dict[:pcr][2], pcr))
 end
 
@@ -1530,7 +1535,7 @@ end
 # function get_jeq_jks_fpath(jf)
 #     jeq_fpath = make_jeq_res_fpath()
 #     common_params_dir = get_jeq_common_params_dir(jf)
-    
+
 #     common_params_fpath = string(jeq_fpath, "/", common_params_dir)
 #     jks_dir = get_jks_dir(jf)
 
@@ -1555,7 +1560,7 @@ end
 function get_jeq_common_params_fpath(jf)
     jeq_fpath = make_jeq_res_fpath(jf)
     common_params_dir = get_jeq_common_params_dir(jf)
-    
+
     return string(jeq_fpath, "/", common_params_dir)
 end
 
@@ -1597,7 +1602,7 @@ function make_jeq_common_params_fpath(jf)
     end
 
     return common_params_fpath
-    
+
 end
 
 
@@ -1608,7 +1613,7 @@ function make_jeq_jks_fpath(jf)
         mkdir(jks_fpath)
     end
 
-    return jks_fpath 
+    return jks_fpath
 end
 # ##############################################################
 
@@ -1618,36 +1623,36 @@ function get_otc_fi_opt_rmp(ft::FirmType)
     if .&(!isnothing(ft.rm.fr), isnothing(ft.nrm.fr))
         opt_rmp = :rm
     elseif .&(!isnothing(ft.rm.fr), !isnothing(ft.nrm.fr))
-        rm_debt = get_cvm_debt_price(ft.rm.fr, ft.rm.fr.optKS.vbl, 
+        rm_debt = get_cvm_debt_price(ft.rm.fr, ft.rm.fr.optKS.vbl,
                                      ft.rm.fr.pm.sigmal;
-                                     mu_b=ft.rm.fr.optKS.mu_b, 
-                                     m=ft.rm.fr.optKS.m, 
-                                     c=ft.rm.fr.optKS.c,    
+                                     mu_b=ft.rm.fr.optKS.mu_b,
+                                     m=ft.rm.fr.optKS.m,
+                                     c=ft.rm.fr.optKS.c,
                                      p=ft.rm.fr.optKS.p)
 
         rm_eq = get_cvm_eq(ft.rm.fr, ft.rm.fr.pm.V0,
                            ft.rm.fr.pm.sigmal;
-                           mu_b=ft.rm.fr.optKS.mu_b, 
-                           m=ft.rm.fr.optKS.m, 
-                           c=ft.rm.fr.optKS.c,    
+                           mu_b=ft.rm.fr.optKS.mu_b,
+                           m=ft.rm.fr.optKS.m,
+                           c=ft.rm.fr.optKS.c,
                            p=ft.rm.fr.optKS.p)
-        
+
         rm_fv = rm_debt + rm_eq
-        
-        nrm_res = eq_fd(ft.nrm.fr; vbl=ft.nrm.fr.optKS.vbl, 
-                        mu_b=ft.nrm.fr.optKS.mu_b, 
-                        m=ft.nrm.fr.optKS.m, 
-                        c=ft.nrm.fr.optKS.c,    
+
+        nrm_res = eq_fd(ft.nrm.fr; vbl=ft.nrm.fr.optKS.vbl,
+                        mu_b=ft.nrm.fr.optKS.mu_b,
+                        m=ft.nrm.fr.optKS.m,
+                        c=ft.nrm.fr.optKS.c,
                         p=ft.nrm.fr.optKS.p)
-        
+
         nrm_fv = nrm_res[:firm_value]
-        
+
         opt_rmp = rm_fv > nrm_fv ? :rm : :nrm
     else
         println("Error! Missing Risk-Management results. Exiting...")
         return
     end
-    
+
     return opt_rmp
 end
 
@@ -1692,7 +1697,7 @@ function joint_bond_price(sf, rf, jks,
     end
 
     # Compute Bond Prices
-    if get_obj_model(sf) == "cvm" 
+    if get_obj_model(sf) == "cvm"
         sf_bpr = get_cvm_bond_price(sf, ttm, sf.pm.sigmal;
                                     Vt=jks.vbl * exp(vt),
                                     vb=jks.st_vb,
@@ -1700,26 +1705,77 @@ function joint_bond_price(sf, rf, jks,
                                     c=jks.c, p=jks.p)
     else
         sf_bpr = get_svm_bond_price(sf, jks.st_vb, ttm;
-                                    Vt=jks.vbl * exp(vt), 
+                                    Vt=jks.vbl * exp(vt),
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ftype=sf_ftype)
     end
 
-    if get_obj_model(rf) == "cvm" 
+    if get_obj_model(rf) == "cvm"
         rf_bpr = get_cvm_bond_price(rf, ttm, rf.pm.sigmal;
                                     Vt=jks.vbl * exp(vt),
                                     vb=jks.rt_vb,
                                     mu_b=jks.mu_b, m=jks.m,
                                     c=jks.c, p=jks.p)
-    else   
+    else
         rf_bpr = get_svm_bond_price(rf, jks.rt_vb, ttm;
-                                    Vt=jks.vbl * exp(vt), 
+                                    Vt=jks.vbl * exp(vt),
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ftype=rf_ftype)
     end
- 
+
     # Joint Price
     return mu_s * sf_bpr + (1. - mu_s) * rf_bpr
+end
+
+
+function get_joint_bond_yield(sf, rf;
+                              jks=JointKStruct(fill(NaN, 10)...),
+                              mu_s::Float64=NaN,
+                              vt::Float64=NaN, Vt::Float64=NaN,
+                              min_yield=1e-3, max_yield=5.,
+                              N=10^5,
+                              sf_ftype::String="bf",
+                              rf_ftype::String="bf")
+
+    # Yield - Bond Price Function
+    ybpr(y) = (jks.c/y) * (1 - exp(-y * jks.m)) + jks.p * exp(-y * jks.m)
+    
+    # Vector of Yield Candidates
+    yield_vec = range(min_yield, stop=max_yield, length=N)
+    
+    # Vector of Bond Prices
+    ybpr_vec = [ybpr(y) for y in yield_vec]
+    
+    # Newly Issued Bond Price
+    nibpr = joint_bond_price(sf, rf, jks, jks.m;
+                             mu_s=mu_s,
+                             vt=vt, Vt=Vt, 
+                             sf_ftype=sf_ftype, 
+                             rf_ftype=rf_ftype)
+
+    # Bond Yield
+    return yield_vec[argmin(abs.(ybpr_vec .- nibpr))]
+end
+
+
+function get_joint_bond_spread(sf, rf;
+                               jks=JointKStruct(fill(NaN, 10)...),
+                               mu_s::Float64=NaN,
+                               vt::Float64=NaN, Vt::Float64=NaN,
+                               min_yield=1e-3, max_yield=5.,
+                               N=10^5,
+                               sf_ftype::String="bf",
+                               rf_ftype::String="bf")
+
+  byield = get_joint_bond_yield(sf, rf; jks=jks,
+                                mu_s=mu_s, vt=vt, Vt=Vt,
+                                min_yield=min_yield,
+                                max_yield=max_yield,
+                                N=N, sf_ftype=sf_ftype,
+                                rf_ftype=rf_ftype)
+
+  # Spreads in Basis Points
+  return (byield - sf.pm.r) * 10^4
 end
 
 
@@ -1748,20 +1804,20 @@ function joint_debt_price(sf, rf, jks;
     elseif isnan(vt)
         vt = log(Vt/jks.vbl)
     end
-    
+
     # Compute Debt Price #################################################
     # either model is CVM or bond surface maturity
     # must coincide with capital structure maturity.
-    if get_obj_model(sf) == "cvm" 
+    if get_obj_model(sf) == "cvm"
         sf_dpr = get_cvm_debt_price(sf, jks.st_vb,
                                     sf.pm.sigmal;
-                                    Vt=jks.vbl * exp(vt), 
+                                    Vt=jks.vbl * exp(vt),
                                     mu_b=jks.mu_b, m=jks.m,
                                     c=jks.c, p=jks.p,
                                     N1=ttmN0, N2=ttmN)
     elseif abs.(sf.m - jks.m) < 1e-4
         sf_dpr = get_svm_debt_price(sf, jks.st_vb;
-                                    Vt=jks.vbl * exp(vt), 
+                                    Vt=jks.vbl * exp(vt),
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ttmN=ttmN)
     else
@@ -1771,16 +1827,16 @@ function joint_debt_price(sf, rf, jks;
         return NaN
     end
 
-    if get_obj_model(rf) == "cvm" 
+    if get_obj_model(rf) == "cvm"
         rf_dpr = get_cvm_debt_price(rf, jks.rt_vb,
                                     rf.pm.sigmal;
-                                    Vt=jks.vbl * exp(vt), 
+                                    Vt=jks.vbl * exp(vt),
                                     mu_b=jks.mu_b, m=jks.m,
                                     c=jks.c, p=jks.p,
                                     N1=ttmN0, N2=ttmN)
     elseif abs.(rf.m - jks.m) < 1e-4
         rf_dpr = get_svm_debt_price(rf, jks.rt_vb;
-                                    Vt=jks.vbl * exp(vt), 
+                                    Vt=jks.vbl * exp(vt),
                                     mu_b=jks.mu_b, # m=jks.m,
                                     c=jks.c, p=jks.p, ttmN=ttmN)
     else
@@ -1810,7 +1866,7 @@ function joint_eq_fd_newly_issued_bonds(sf, rf, jks, vbl::Float64,
                           sf.pm.kappa)
     # ##############################################
 
-    
+
     _, v_subgrid = grid_creator((1 + 1e-4) * minimum(sf.bs.vtgrid), maximum(vgrid), vtN)
 
     # ##############################################
@@ -1831,7 +1887,7 @@ function joint_eq_fd_newly_issued_bonds(sf, rf, jks, vbl::Float64,
                                              vt=v, mu_s=jks.mu_s,
                                              sf_ftype=sf_ftype,
                                              rf_ftype=rf_ftype) for v in v_subgrid])
-    
+
     #bpr = Dierckx.Spline1D(vcat(.0, v_subgrid), vcat(dpayoff, bpr_vec); k=3, bc="extrapolate")
     bpr = Dierckx.Spline1D(v_subgrid, bpr_vec; k=spline_k, bc=spline_bc)
 
@@ -1856,26 +1912,26 @@ function joint_eq_get_Vmax_vgrid(sf, rf, jks, vbl::Float64; vtN::Int64=1500)
     println(string("Equity Vmax: ", eq_Vmax))
     println(" ")
     # ############################################
-    
+
     # vtgrid
     vtgrid = reverse(range(0.0, stop=log(eq_Vmax/float(vbl)), length=vtN))
-    
+
     # #################################
     # ######## Boundary Values ########
     # #################################
-        
-    println(string("eq_max: ", vtgrid[1]))
-    
-    # Lower Barrier:
-    
-    return eq_Vmax, vtgrid
-end 
 
-                   
+    println(string("eq_max: ", vtgrid[1]))
+
+    # Lower Barrier:
+
+    return eq_Vmax, vtgrid
+end
+
+
 function joint_eq_get_boundary_values(tj, jks,
                                       vbj::Float64, vbl::Float64, eq_Vmax::Float64)
     # Lower Barriers
-    if abs(vbj - vbl) < 1e-4 #|| get_obj_model(tj) == "cvm"   
+    if abs(vbj - vbl) < 1e-4 #|| get_obj_model(tj) == "cvm"
         tj_eq_vbl = maximum([0., get_param(tj, :alpha) * vbl -
                              get_pv_rfdebt(tj; mu_b=jks.mu_b,
                                            m=jks.m, c=jks.c, p=jks.p)])
@@ -1895,7 +1951,7 @@ function joint_eq_get_boundary_values(tj, jks,
     tj_eq_max = get_cvm_eq(tj, eq_Vmax, tj.pm.sigmal;
                            mu_b=jks.mu_b, m=jks.m, c=jks.c, p=jks.p)
 
-    return tj_eq_vbl, tj_eq_max 
+    return tj_eq_vbl, tj_eq_max
 end
 
 
@@ -1917,10 +1973,10 @@ function joint_eq_fd(sf, rf, jks;
                      rf_ftype::String="bf",
                      lb::Float64=.75, ub::Float64=1.25, vbN::Int64=15,
                      vtN::Int64=1500)
-    
+
     # V0::Float64=NaN,
     tic = time()
-    
+
     println("================================================================")
     println("  ")
     # Set Capital Structure #########################
@@ -1942,7 +1998,7 @@ function joint_eq_fd(sf, rf, jks;
     println("  ")
     println("================================================================")
 
-    
+
     # Equity Boundary Values ########################
     eq_Vmax, vtgrid = joint_eq_get_Vmax_vgrid(sf, rf, jks, jks.vbl;
                                               vtN=vtN)
@@ -1955,12 +2011,12 @@ function joint_eq_fd(sf, rf, jks;
                                                         jks.vbl, eq_Vmax)
     # ###############################################
 
-    # Store Parameters ############################## 
+    # Store Parameters ##############################
     fdp = JointFDParams(sf_eq_vbl,
                         sf_eq_max,
                         rf_eq_vbl,
                         rf_eq_max)
-     # ###############################################   
+     # ###############################################
 
     # Newly-Issued Bond Prices ######################
     bond_prices = joint_eq_fd_newly_issued_bonds(sf, rf,
@@ -1976,10 +2032,10 @@ function joint_eq_fd(sf, rf, jks;
     debt_pr = joint_debt_price(sf, rf, jks)
 
     # ##############################################
-    
+
     # Compute Equity Values #########################
     # No adjustments to vtgrid, because
-    # bond_prices and sf_eq_vbl already adjust for 
+    # bond_prices and sf_eq_vbl already adjust for
     # the differences in the default barrier.
     sf_eq_dict = eq_fd_core(sf, jks, jks.vbl,
                             sf_eq_vbl, sf_eq_max,
@@ -1988,10 +2044,10 @@ function joint_eq_fd(sf, rf, jks;
     _, sf_df = eq_fd_export_results(sf, jks, jks.vbl, sf_eq_dict; debt=debt_pr)
 
     sf_df[!, :mu_s] .= jks.mu_s
-    sf_df[!, :fi_vb] .= jks.fi_st_vb 
+    sf_df[!, :fi_vb] .= jks.fi_st_vb
     sf_df[!, :st_vb] .= jks.st_vb
-    sf_df[!, :rt_vb] .= NaN   
-    
+    sf_df[!, :rt_vb] .= NaN
+
     rf_eq_dict = eq_fd_core(rf, jks, jks.vbl,
                             rf_eq_vbl, rf_eq_max,
                             vtgrid, bond_prices;
@@ -1999,14 +2055,15 @@ function joint_eq_fd(sf, rf, jks;
                             # vtgrid .-log(jks.vbl/jks.rt_vb), bond_prices)
     _, rf_df = eq_fd_export_results(rf, jks, jks.vbl, rf_eq_dict; debt=debt_pr)
     rf_df[!, :mu_s] .= jks.mu_s
-    rf_df[!, :fi_vb] .= jks.fi_rt_vb 
+    rf_df[!, :fi_vb] .= jks.fi_rt_vb
     rf_df[!, :st_vb] .= NaN
     rf_df[!, :rt_vb] .= jks.rt_vb
     # ##############################################
 
     println(string("Total computation time: ", time() - tic))
 
-    return vcat([sf_df, rf_df]...)[:, jks_eq_fd_cols]
+    cols = [Symbol(x) for x in jks_eq_fd_cols if x in Symbol.(names(sf_df))] 
+    return vcat([sf_df, rf_df]...)[:, cols]
 end
 
 
@@ -2022,7 +2079,7 @@ function joint_vb_extract_results(sf, rf, jks,
     if isnan(fi_st_vb)
         fi_st_vb = find_full_info_vb(sf, bc, jks.mu_b)
     end
-    
+
     if isnan(fi_rt_vb)
         fi_rt_vb = find_full_info_vb(rf, bc, jks.mu_b)
     end
@@ -2038,7 +2095,7 @@ function joint_vb_extract_results(sf, rf, jks,
                      st_vb=st_vb,
                      rt_vb=rt_vb,
                      vbl=vbl)
-   
+
 
     # Store Results
     res = Dict{Symbol, Float64}(:fi_st_vb => df[1, :fi_vb],
@@ -2067,13 +2124,13 @@ function compute_joint_eq_vb_results(sf, rf, jks;
                                      vbN2::Int64=20,
                                      lb2::Float64=.9, ub2::Float64=1.1)
 
-   
+
     # Set vbl bounds and form vbl grid ######################################
     s_vbh = NaN
     if get_obj_model(sf) == "svm"
         s_vbh = get_cvm_vb(sf, sf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
     end
-    
+
     r_vbh = NaN
     if get_obj_model(rf) == "svm"
         r_vbh = get_cvm_vb(rf, rf.pm.sigmah; mu_b=jks.mu_b, c=jks.c, p=jks.p)
@@ -2085,7 +2142,7 @@ function compute_joint_eq_vb_results(sf, rf, jks;
     end
     vbh_max = maximum([x for x in [s_vbh, r_vbh] if !isnan(x)])
     vbh_min = minimum([x for x in [s_vbh, r_vbh] if !isnan(x)])
-    
+
     # Form Grid of VB candidates
     vbl_min = minimum(x -> isnan(x) ? Inf : x, [jks.fi_st_vb, jks.fi_rt_vb, vbl_min])
     vbl_max = maximum(x -> isnan(x) ? -Inf : x, [jks.fi_st_vb, jks.fi_rt_vb, vbl_max])
@@ -2095,12 +2152,15 @@ function compute_joint_eq_vb_results(sf, rf, jks;
 
     # vbh_min / vbl_max > jf.rf.bi.vbhlmin
     vbl_max = minimum([ub2 * vbl_max, vbh_min/ rf.bi.vbhlmin])
-    
+
     # Form vbl grid
     vbl_grid = range(vbl_min, stop= vbl_max, length=vbN2)
     # #######################################################################
 
 
+    println(" ")
+    println(vbl_grid)
+    println(" ")
     # ####################################################################
     # Compute Joint Equity Finite Differences Method
     sf_res = fetch(@spawn [joint_vb_extract_results(sf, rf, jks, vbl;
@@ -2135,7 +2195,7 @@ function compile_opt_vb_results(sf, rf, jks, sfdf::DataFrame, rfdf::DataFrame)
     # vbl that sets E'_s(vbl) to zero
     st_vb, rt_vb = get_type_contingent_vbs(opt_st_vb,
                                            jks.fi_st_vb,
-                                           jks.fi_rt_vb; 
+                                           jks.fi_rt_vb;
                                            sf_defaults_first=true)
     s1 = joint_eq_fd(sf, rf, jks, st_vb=st_vb, rt_vb=rt_vb)
 
@@ -2143,10 +2203,10 @@ function compile_opt_vb_results(sf, rf, jks, sfdf::DataFrame, rfdf::DataFrame)
     # vbl that sets E'_r(vbl) to zero
     st_vb, rt_vb = get_type_contingent_vbs(opt_rt_vb,
                                            jks.fi_st_vb,
-                                           jks.fi_rt_vb; 
+                                           jks.fi_rt_vb;
                                            sf_defaults_first=true)
     s2 = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
-    
+
     # sfdf = vcat([s1, s2]...)
     # ###############################################################
 
@@ -2156,21 +2216,21 @@ function compile_opt_vb_results(sf, rf, jks, sfdf::DataFrame, rfdf::DataFrame)
     # vbl that sets E'_s(vbl) to zero
     st_vb, rt_vb = get_type_contingent_vbs(opt_st_vb,
                                            jks.fi_st_vb,
-                                           jks.fi_rt_vb; 
-                                           sf_defaults_first=false)   
+                                           jks.fi_rt_vb;
+                                           sf_defaults_first=false)
     r1 = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
 
-    # vbl that sets E'_r(vbl) to zero   
+    # vbl that sets E'_r(vbl) to zero
     st_vb, rt_vb = get_type_contingent_vbs(opt_rt_vb,
                                            jks.fi_st_vb,
-                                           jks.fi_rt_vb; 
+                                           jks.fi_rt_vb;
                                            sf_defaults_first=false)
     r2 = joint_eq_fd(sf, rf, jks; st_vb=st_vb, rt_vb=rt_vb)
     if abs.(r2[isnan.(r2[:, :st_vb]), :eq_deriv][1]) > 1e-2
         r2 = refine_contingent_vbs(sf, rf, jks, st_vb, rt_vb)
     end
     # ###############################################################
-    
+
     println("=====================================================")
     println("=====================================================")
     # Compile Results
@@ -2181,47 +2241,65 @@ function compile_opt_vb_results(sf, rf, jks, sfdf::DataFrame, rfdf::DataFrame)
     cols1 = [:sf_defaults_first,
              :fi_vb, :st_vb, :rt_vb, :vb,
              :eq_deriv, :eq_min_val]
-    return df[:, vcat(cols1, [x for x in names(df) if !(x in cols1)]...)]
+    return df[:, vcat(cols1, [x for x in Symbol.(names(df)) if !(x in cols1)]...)]
 end
 
 
 function filter_joint_vb_results(df::DataFrame;
                                  tol1::Float64=-1e-2, tol2::Float64=1e-2)
 
-    # Limited Liability Conditions ############################
-    cond1 = df -> .&([df[:, x] .>= tol1 for x in [:eq_deriv, :eq_min_val]]...)
+    count = 1
+    empty_cond = true
+    tol1_vec = [-1e-2, -2.5e-2, -5e-2,
+                -1e-1, -1.25e-1, -1.5e-1,
+                -2e-1, -2.5e-1, -5e-1]
+    tol2_vec = [1e-2, 2.5e-2, 5e-2, 7.5e-2, 1e-1]
+    tol_df = DataFrame(hcat([[x, y] for x in tol1_vec, y in tol2_vec]...)',
+                    [:tol1, :tol2])
+    tol_df = sort(tol_df, [:tol1], rev=true)#, [:x2])
+    vbdf = DataFrame()
+    while .&(empty_cond, count <= size(tol_df, 1))
+        tol1 = tol_df[count, :tol1]
+        tol2 = tol_df[count, :tol2]
+        # Limited Liability Conditions ############################
+        cond1 = df -> .&([df[:, x] .>= tol1 for x in [:eq_deriv, :eq_min_val]]...)
 
-    # When the Safe Firm defaults first, 
-    # its equity and equity derivative should be zero
-    # at the joint default barrier
-    sf_cond = df -> .&(df[:, :sf_defaults_first], 
-                       isnan.(df[:, :st_vb]) .| (df[:, :eq_deriv] .<= tol2))
+        # When the Safe Firm defaults first,
+        # its equity and equity derivative should be zero
+        # at the joint default barrier
+        sf_cond = df -> .&(df[:, :sf_defaults_first],
+                           isnan.(df[:, :st_vb]) .| (df[:, :eq_deriv] .<= tol2))
 
-    # When the Risky Firm defaults first, 
-    # its equity and equity derivative should be zero
-    # at the joint default barrier
-    rf_cond = df -> .&(df[:, :sf_defaults_first] .==false, 
-                       isnan.(df[:, :rt_vb]) .| (df[:, :eq_deriv] .<= tol2))
+        # When the Risky Firm defaults first,
+        # its equity and equity derivative should be zero
+        # at the joint default barrier
+        rf_cond = df -> .&(df[:, :sf_defaults_first] .==false,
+                           isnan.(df[:, :rt_vb]) .| (df[:, :eq_deriv] .<= tol2))
 
-    # Limited Liability Conditions must be satisfied by both firms:
-    llcond = df -> sum(.&(cond1(df), (sf_cond(df) .| rf_cond(df)))) == 2
-    # #########################################################
+        # Limited Liability Conditions must be satisfied by both firms:
+        llcond = df -> sum(.&(cond1(df), (sf_cond(df) .| rf_cond(df)))) == 2
+        # #########################################################
 
-    ## Find vb candidates
-    LL = []
-    for x in groupby(df, [:vb, :sf_defaults_first])
-        if llcond(x)
-            push!(LL, DataFrame(x))
+        ## Find vb candidates
+        LL = []
+        for x in groupby(df, [:vb, :sf_defaults_first])
+            if llcond(x)
+                push!(LL, DataFrame(x))
+            end
         end
+        vbdf = vcat(LL...)
+
+        count += 1
+        empty_cond = isempty(vbdf)
     end
-    vbdf = vcat(LL...)
-    
+
+
     if isempty(vbdf)
         println(string("No results for mu_b in ", unique(df[:, :mu_b])))
         return
     end
     return vbdf
-end    
+end
 
 
 function find_joint_optimal_vb(sf, rf, jks;
@@ -2250,7 +2328,7 @@ function find_joint_optimal_vb(sf, rf, jks;
         setfield!(jks, :mu_b, mu_b)
     end
 
-    
+
     # Set Full Information VBs
     if any([isnan(jks.fi_st_vb),
             isnan(jks.fi_rt_vb),
@@ -2298,25 +2376,25 @@ function find_joint_payoffs(sf, rf, jks,
                                                     mu_b=mu_b,
                                                     rerun_fi_vb=true)
                               for mu_b in mu_b_grid])
-    
+
     # Store results in a DataFrame
-    df = vcat(dfl...)
-    
+    df = vcat([tmp for tmp in dfl if !isnothing(tmp)]...) # vcat(dfl...)
+
     # Form Refined mu_b grid
     ref_mu_b_grid = range(minimum(mu_b_grid), stop=maximum(mu_b_grid), length=N)
-    
+
     # Form Dictionary to Store Results
-    resd = Dict{Symbol, Any}(:st => Dict{Symbol, Any}(), 
+    resd = Dict{Symbol, Any}(:st => Dict{Symbol, Any}(),
                              :rt => Dict{Symbol, Any}(),
                              :mu_b_grid => ref_mu_b_grid)
-    
+
     # Interpolate Objective Functions in mu_b ################################
     for ft in [:st, :rt]
-        aft = ft == :st ? :rt : :st 
+        aft = ft == :st ? :rt : :st
         ftdf = df[isnan.(df[:, Symbol(aft, :_vb)]), :]
         for fun in [:debt, :equity, :MBR, :firm_value]
-            resd[ft][fun] =  Dierckx.Spline1D(ftdf[:, :mu_b], 
-                                              ftdf[:, fun]; 
+            resd[ft][fun] =  Dierckx.Spline1D(ftdf[:, :mu_b],
+                                              ftdf[:, fun];
                                               k=spline_k, bc=spline_bc)
         end
     end
@@ -2338,12 +2416,12 @@ end
 #                                                     mu_b=mu_b,
 #                                                     rerun_fi_vb=true)
 #                               for mu_b in mu_b_grid])
-    
+
 #     # Store results in a DataFrame
 #     df = vcat(dfl...)
 #     sf_df = df[isnan.(df[:, :rt_vb]), :]
 #     rf_df = df[isnan.(df[:, :st_vb]), :]
-    
+
 #     # Interpolate Objective Functions in mu_b ################################
 #     sf_objf = Dierckx.Spline1D(sf_df[:, :mu_b], sf_df[:, sf_obj_fun]; k=spline_k, bc=spline_bc)
 #     rf_objf = Dierckx.Spline1D(rf_df[:, :mu_b], rf_df[:, rf_obj_fun]; k=spline_k, bc=spline_bc)
@@ -2358,29 +2436,36 @@ end
 function find_mu_b_intervals(ref_mu_b_grid::StepRangeLen{Float64,
                                                          Base.TwicePrecision{Float64},
                                                          Base.TwicePrecision{Float64}},
-                             cond::BitArray{1}; N::Int64=20)
-    
-    mu_b_discarded = ref_mu_b_grid[cond .== false]
-    
-    mu_b_dis_min = minimum(mu_b_discarded)
-    mu_b_dis_max = maximum(mu_b_discarded)
+                             cond::BitArray{1}; N::Int64=20, tol::Float64=1e-5)
 
-    # Check if there is only one interval
-    if any([abs.(mu_b_dis_min - minimum(ref_mu_b_grid)) < 1e-6,
-            abs.(mu_b_dis_max - maximum(ref_mu_b_grid)) < 1e-6])
-        filtered_mu_b_grid_1 = range(minimum(ref_mu_b_grid[cond]),
-                                     stop=maximum(ref_mu_b_grid[cond]),
-                                     length=N)
-        filtered_mu_b_grid_2 = range(0, stop=0, length=0)
-    else
-        # In case there are two intervals:
-        filtered_mu_b_grid_1 = range(minimum(ref_mu_b_grid[cond]),
-                                     stop=minimum(mu_b_discarded),
-                                     length=N)
-        filtered_mu_b_grid_2 = range(maximum(mu_b_discarded),
-                                     stop=maximum(ref_mu_b_grid[cond]),
-                                     length=N)
+    mu_b_discarded = ref_mu_b_grid[cond .== false]
+    filtered_mu_b_grid_1 = range(minimum(ref_mu_b_grid),
+                                         stop=maximum(ref_mu_b_grid),
+                                         length=N)
+    filtered_mu_b_grid_2 = range(0, stop=0, length=0)
+
+    if !isempty(mu_b_discarded)
+        mu_b_dis_min = minimum(mu_b_discarded)
+        mu_b_dis_max = maximum(mu_b_discarded)
+
+        # Check if there is only one interval
+        if any([abs.(mu_b_dis_min - minimum(ref_mu_b_grid)) < tol,
+                abs.(mu_b_dis_max - maximum(ref_mu_b_grid)) < tol])
+            filtered_mu_b_grid_1 = range(minimum(ref_mu_b_grid[cond]),
+                                         stop=maximum(ref_mu_b_grid[cond]),
+                                         length=N)
+            filtered_mu_b_grid_2 = range(0, stop=0, length=0)
+        else
+            # In case there are two intervals:
+            filtered_mu_b_grid_1 = range(minimum(ref_mu_b_grid[cond]),
+                                         stop=minimum(mu_b_discarded),
+                                         length=N)
+            filtered_mu_b_grid_2 = range(maximum(mu_b_discarded),
+                                         stop=maximum(ref_mu_b_grid[cond]),
+                                         length=N)
+        end
     end
+
 
     return filtered_mu_b_grid_1, filtered_mu_b_grid_2
 end
@@ -2389,16 +2474,16 @@ end
 function find_opt_mu_b(objf,
                        filtered_mu_b_grid_1::Array{Float64, 1},
                        filtered_mu_b_grid_2::Array{Float64, 1})
-    
+
     # Maximize Safe Firm's Objective Function
     mu_b_opt_1 = filtered_mu_b_grid_1[argmax(objf(filtered_mu_b_grid_1))]
-    
+
     if size(filtered_mu_b_grid_2, 1) == 0
         return mu_b_opt_1
     else
         # Maximize Safe Firm's Objective Function
         mu_b_opt_2 = filtered_mu_b_grid_2[argmax(objf(filtered_mu_b_grid_2))]
-        
+
         return maximum([mu_b_opt_1, mu_b_opt_2])
     end
 end
@@ -2406,30 +2491,30 @@ end
 
 function sep_eq_fd(fr, bc, mu_b::Float64)
     fr_vb = find_full_info_vb(fr, bc, mu_b)
-    return eq_fd(fr, vbl=fr_vb, 
-                 mu_b=mu_b, m=bc.m, 
+    return eq_fd(fr, vbl=fr_vb,
+                 mu_b=mu_b, m=bc.m,
                  c=bc.c, p=bc.p)
-    
+
 end
 
 
-function separate_eq_calculator(sf, rf, bc, mu_s::Float64, 
+function separate_eq_calculator(sf, rf, bc, mu_s::Float64,
                                 misrep_type::Symbol,
                                 mu_b_opt::Float64,
                                 misrep_type_fi_mu_b::Float64)
 
     st_mu_b = misrep_type == :rt ? mu_b_opt : misrep_type_fi_mu_b
     rt_mu_b = misrep_type == :rt ? misrep_type_fi_mu_b : mu_b_opt
-    
+
     s_eqdf = sep_eq_fd(sf, bc, st_mu_b)
     r_eqdf = sep_eq_fd(rf, bc, rt_mu_b)
-    
+
     s_eqdf[!, :fi_vb] .= s_eqdf[1, :vb]
     s_eqdf[!, :st_vb] .= s_eqdf[1, :vb]
     s_eqdf[!, :rt_vb] .= NaN
-    
+
     r_eqdf[!, :fi_vb] .= r_eqdf[1, :vb]
-    r_eqdf[!, :st_vb] .= NaN 
+    r_eqdf[!, :st_vb] .= NaN
     r_eqdf[!, :rt_vb] .= r_eqdf[1, :vb]
 
     eqdf = vcat(s_eqdf, r_eqdf)
@@ -2443,15 +2528,13 @@ end
 # ** Joint Optimal Bond Measure - Adjusted
 function get_joint_objf(fd, jks, objf::Symbol)
     if objf == :st_firm_value
-       f1(X::Array{Float64,1}) = map(x -> fd[:st][:firm_value](x) , X)
-       return f1
+       return fd[:st][:firm_value]
     elseif objf == :exp_firm_value
-       f2(X::Array{Float64,1}) = map(x -> jks.mu_s * fd[:st][:firm_value](x) + 
-                            (1 - jks.mu_s) * fd[:rt][:firm_value](x), X)
-        return f2
+        f(x) = jks.mu_s * fd[:st][:firm_value](x) +
+                            (1 - jks.mu_s) * fd[:rt][:firm_value](x)
+        return f
     elseif objf == :rt_firm_value
-        f1(X::Array{Float64,1}) = map(x -> fd[:rt][:firm_value](x) , X)
-        return f1
+        return fd[:rt][:firm_value]
     else
        println("Error! Objective function not recognized.")
        return
@@ -2464,7 +2547,7 @@ function get_pool_eqdf(sf, rf, jks,
                        misrep_type::Symbol,
                        misrep_ic_objf_val::Float64;
                        misrep_ic_objf::Symbol=:MBR,
-                       jeq_objf::Symbol=:exp_firm_value,
+                       jeq_objf::Symbol=:st_firm_value,
                        spline_k::Int64=3,
                        spline_bc::String="extrapolate",
                        N1::Int64=20,
@@ -2477,7 +2560,9 @@ function get_pool_eqdf(sf, rf, jks,
 
     # The Risky-Type's Incentive Compatibility Condition
     # Range of mu_b values in pooling equilibrium
-    misrep_ic_cond = resd[misrep_type][misrep_ic_objf](resd[:mu_b_grid]) .>= misrep_ic_objf_val
+    # misrep_ic_cond = resd[misrep_type][misrep_ic_objf](resd[:mu_b_grid]) .>= misrep_ic_objf_val
+
+    misrep_ic_cond = BitArray([true for x in resd[:mu_b_grid]])
     filtered_mu_b_grid_1, filtered_mu_b_grid_2 = find_mu_b_intervals(resd[:mu_b_grid],
                                                                      misrep_ic_cond; N=N1)
 
@@ -2489,7 +2574,7 @@ function get_pool_eqdf(sf, rf, jks,
     mu_b_opt = find_opt_mu_b(objf,
                              Array(filtered_mu_b_grid_1),
                              Array(filtered_mu_b_grid_2))
-    
+
     # Compute Results
     return find_joint_optimal_vb(sf, rf, jks;
                                  mu_b=mu_b_opt, rerun_fi_vb=true)
@@ -2502,7 +2587,7 @@ function get_sep_eqdf(sf, rf, bc, jks,
                       misrep_type_fi_mu_b::Float64,
                       misrep_ic_objf_val::Float64;
                       misrep_ic_objf::Symbol=:MBR,
-                      jeq_objf::Symbol=:sf_firm_value,  
+                      jeq_objf::Symbol=:st_firm_value,
                       spline_k::Int64=3,
                       spline_bc::String="extrapolate",
                       N1::Int64=20,
@@ -2525,8 +2610,8 @@ function get_sep_eqdf(sf, rf, bc, jks,
 
     # Form Joint Objective Function
     # In the separating case, it is the safe type's firm value.
-    objf = get_joint_objf(resd, jks, jeq_objf)
-    
+    objf = get_joint_objf(resd, sep_misrep_jks, jeq_objf)
+
     # Mu_b that yields maximum Joint Objective Function Value
     # conditional on misrepresentation not being optimal for risky type.
     # Since mu_s = 1 above, the payoffs for the safe firm coincide with
@@ -2535,10 +2620,10 @@ function get_sep_eqdf(sf, rf, bc, jks,
     mu_b_opt = find_opt_mu_b(objf,
                              Array(filtered_mu_b_grid_1),
                              Array(filtered_mu_b_grid_2))
-    
+
 
     # Compute Separating Eq. Payoffs
-    eqdf = separate_eq_calculator(sf, rf, bc, jks.mu_s,
+    eqdf = separate_eq_calculator(sf, rf, bc, sep_misrep_jks.mu_s,
                                   misrep_type, mu_b_opt,
                                   misrep_type_fi_mu_b)
 
@@ -2550,7 +2635,7 @@ function find_joint_optimal_bond_measure(sf, rf, jks,
                                          fi_sf_mu_b::Float64,
                                          fi_rf_mu_b::Float64,
                                          fi_rf_obj_val::Float64;
-                                         equilibrium_type::String="all", 
+                                         equilibrium_type::String="all",
                                          sf_obj_fun::Symbol=:firm_value,
                                          rf_obj_fun::Symbol=:MBR,
                                          lb::Float64=.75,
@@ -2582,10 +2667,10 @@ function find_joint_optimal_bond_measure(sf, rf, jks,
         println("Please set equilibrium_type to pooling or separting. Exiting...")
         return
     end
-    
+
     optdf = DataFrame()
     for eq_type in eq_types
-        # Find optimal mu_b values 
+        # Find optimal mu_b values
         if eq_type == "pooling"
             eqdf = get_pool_eqdf(sf, rf, jks2,
                                  mu_b_grid, fi_rf_obj_val;
@@ -2593,8 +2678,8 @@ function find_joint_optimal_bond_measure(sf, rf, jks,
                                  rf_obj_fun=rf_obj_fun,
                                  N1=mu_bN,
                                  N2=mu_bN2)
-            
-        elseif eq_type == "separating" 
+
+        elseif eq_type == "separating"
             eqdf = get_sep_eqdf(sf, rf, jks2, mu_b_grid,
                                 fi_rf_mu_b, fi_rf_obj_val;
                                 sf_obj_fun=sf_obj_fun,
@@ -2603,96 +2688,130 @@ function find_joint_optimal_bond_measure(sf, rf, jks,
                                 N2=mu_bN2)
 
         end
-        
+
         # Add Objective Function and Equilibrium Type columns
-        eqdf[:obj_fun] = String(sf_obj_fun)
+        eqdf[1, :obj_fun] = String(sf_obj_fun)
         eqdf[2, :obj_fun] = String(rf_obj_fun)
         eqdf[:eq_type] = eq_type
 
 
         optdf = vcat(optdf, reshape_sf_rf_df(eqdf))
     end
-    
+
     return optdf
 end
 # ##########################################################
 
 
 # * Misrepresentation Functions - ADJUSTED
-function compute_misrep(jf, fidf::DataFrame; 
+function compute_misrep(jf, fidf::DataFrame;
                         sf_obj_fun::Symbol=:firm_value,
-                        rf_obj_fun::Symbol=:firm_value)
-    
+                        rf_obj_fun::Symbol=:firm_value,
+                        min_yield::Float64=1e-3, max_yield::Float64=5.,
+                        N::Int64=10^5, ftype="bf")
+
     # Compute Full Information Results
     fidf, fieqdf = get_fi_eq(jf; fidf=fidf)
     fisf, firf, jks = form_firms_jks(jf, fieqdf)
-    
+
     # Extract Full Information Info
     tmp = Dict{Symbol, Any}(:mu_b => NaN,
-                            :firm_value => NaN, 
+                            :firm_value => NaN,
                             :rmp => Symbol())
     fid = Dict{Symbol, Dict}([x => deepcopy(tmp) for x in [:st, :rt]])
     for tp in [:st, :rt]
         for x in [:mu_b, :firm_value, :rmp]
             fid[tp][x] = fieqdf[Symbol.(fieqdf[:, :type]) .== tp, x][1]
-        end
+          end
     end
-    
+
     # Misrepresentation Capital Structure
     misrep_jks = deepcopy(jks)
-    
+
     # Form DataFrame to Store Results
     ep_misrep_eqdf = DataFrame() # get_empty_df(:misrep)
-    
+
     # Case I: Risky Type Copies Safe Type's Capital Structure
     if !isnan(fid[:st][:mu_b])
         setfield!(misrep_jks, :mu_b, fid[:st][:mu_b])
         setfield!(misrep_jks, :mu_s, 1.)
-    end
-    
-    st_rmp = fid[:st][:rmp] 
+      end 
+
+    st_rmp = fid[:st][:rmp]
     for rt_rmp in [:rm, :nrm]
+        sf = getfield(jf.st, st_rmp).fr
+
         rf = getfield(jf.rt, rt_rmp).fr
         if !isnothing(rf)
-            misrepdf = find_joint_optimal_vb(fisf, rf, 
+            misrepdf = find_joint_optimal_vb(fisf, rf,
                                              misrep_jks;
                                              mu_b=fid[:st][:mu_b],
                                              rerun_fi_vb=true)
-            
+
             misrepdf[!, :eq_type] .= :misrep
             misrepdf[!, :datetime] .= Dates.now()
             misrepdf[!, :type] = [:st, :rt]
             misrepdf[!, :rmp] = [st_rmp, rt_rmp]
             misrepdf[!, :misrep_type] .= :rt
+           
+            # Compute Bond Yields and Yield Spreads
+            misrepdf[!, :yield] .= NaN
+            misrepdf[!, :yield_spd] .= NaN
+
+            KS = Dict{Symbol, Float64}()
+            for x in [:mu_b, :m, :c, :p]
+              KS[x] = misrepdf[1, x]
+            end
+            KS[:vbl] = misrepdf[1, :vb]
+            misrepdf[!, :yield] .= get_bond_yield(sf; KS=KS, min_yield=min_yield,
+                                           max_yield=max_yield, N=N, ftype=ftype)
+            misrepdf[!, :yield_spd] .= get_bond_spread(sf; KS=KS, min_yield=min_yield,
+                                                max_yield=max_yield, N=N, ftype=ftype)
 
             ep_misrep_eqdf = vcat([ep_misrep_eqdf, misrepdf]...)
         end
     end
-    
+
     # Case II: Safe Type Copies Risky Type's Capital Structure
     if !isnan(fid[:rt][:mu_b])
         setfield!(misrep_jks, :mu_b, fid[:rt][:mu_b])
         setfield!(misrep_jks, :mu_s, 0.)
     end
-    
-    rt_rmp = fid[:rt][:rmp] 
+
+    rt_rmp = fid[:rt][:rmp]
     for st_rmp in [:rm, :nrm]
+        rf = getfield(jf.rt, rt_rmp).fr
+
         sf = getfield(jf.st, st_rmp).fr
         if !isnothing(sf)
-            misrepdf = find_joint_optimal_vb(sf, firf, 
+            misrepdf = find_joint_optimal_vb(sf, firf,
                                              misrep_jks;
                                              mu_b=fid[:rt][:mu_b],
-                                             rerun_fi_vb=true)   
+                                             rerun_fi_vb=true)
             misrepdf[!, :eq_type] .= :misrep
             misrepdf[!, :datetime] .= Dates.now()
             misrepdf[!, :type] = [:st, :rt]
             misrepdf[!, :rmp] = [st_rmp, rt_rmp]
             misrepdf[!, :misrep_type] .= :st
 
+            # Compute Bond Yields and Yield Spreads
+            misrepdf[!, :yield] .= NaN
+            misrepdf[!, :yield_spd] .= NaN
+
+            KS = Dict{Symbol, Float64}()
+            for x in [:mu_b, :m, :c, :p]
+              KS[x] = misrepdf[2, x]
+            end
+            KS[:vbl] = misrepdf[2, :vb]
+            misrepdf[!, :yield] .= get_bond_yield(rf; KS=KS, min_yield=min_yield,
+                                           max_yield=max_yield, N=N, ftype=ftype)
+            misrepdf[!, :yield_spd] .= get_bond_spread(rf; KS=KS, min_yield=min_yield,
+                                                max_yield=max_yield, N=N, ftype=ftype)
+
             ep_misrep_eqdf = vcat([ep_misrep_eqdf, misrepdf]...)
-        end
+          end
     end
-    
+
     return ep_misrep_eqdf
 end
 
@@ -2701,22 +2820,24 @@ end
 function get_fi_results(jf, fidf_fpath_name::String;
                         load_df::Bool=true,
                         recompute_df::Bool=false,
-                        save_df::Bool=false)
-    
+                        save_df::Bool=false,
+                        min_yield=1e-3, max_yield=5.,
+                        N=10^5, ftype::String="bf")
+
     fidf = DataFrame()
     fieqdf = DataFrame()
 
     load_df = isfile(fidf_fpath_name) ? load_df : false
     recompute_df = isfile(fidf_fpath_name) ? recompute_df : true
     missing_ft_rmp = false
-    
+
     if load_df
         # Load FIDF, extract results
         lfidf = load_joint_eqdf(fidf_fpath_name; svm=is_svm(jf))
-        
+
         # Extract Results
         fidf, matchd = fi_results_extractor(jf, lfidf)
-    
+
         # Check for missing (ft, rmp)-pairs
         missing_ft_rmp = sum([(matchd[x] == :unmatched) for x in keys(matchd)]) > 0
     end
@@ -2724,18 +2845,24 @@ function get_fi_results(jf, fidf_fpath_name::String;
 
     if missing_ft_rmp | recompute_df
         # Compute Full Information Solution
-        fidf, fieqdf = get_fi_eq(jf)
+        fidf, fieqdf = get_fi_eq(jf; 
+                                 min_yield=min_yield,
+                                 max_yield=max_yield,
+                                 N=N, ftype=ftype)
         save_df = true
     else
         # Get list of ID columns
         id_cols = get_jks_id_cols(fidf)
-                
+
         # Form DataFrame with Unique Rows
         fidf = unique(fidf, id_cols)
 
-        fidf, fieqdf = get_fi_eq(jf; fidf=fidf)
+        fidf, fieqdf = get_fi_eq(jf; fidf=fidf,
+                                 min_yield=min_yield,
+                                 max_yield=max_yield,
+                                 N=N, ftype=ftype)
     end
-    
+
 
     # Save DataFrame
     if save_df
@@ -2743,7 +2870,7 @@ function get_fi_results(jf, fidf_fpath_name::String;
         fpath_name = string(chop(fidf_fpath_name; tail=4),  "_", tt, ".csv")
         CSV.write(fpath_name, fidf)
     end
-    
+
     return fidf, fieqdf
 end
 
@@ -2756,28 +2883,28 @@ function get_misrep_results(jf, fidf::DataFrame,
 
     misrepdf=DataFrame()
     svm=is_svm(jf)
-    
+
     load_df = isfile(misrepdf_fpath_name) ? load_df : false
     recompute_df = isfile(misrepdf_fpath_name) ? recompute_df : true
     missing_ft_rmp = false
-    
+
     _, fieqdf = get_fi_eq(jf; fidf=fidf)
     st_fi_rmp =  Symbol(fieqdf[Symbol.(fieqdf[:, :type]) .== :st,  :rmp][1])
     rt_fi_rmp =  Symbol(fieqdf[Symbol.(fieqdf[:, :type]) .== :rt,  :rmp][1])
-    
+
     if load_df
         # Load misrepdf, extract results
         lmisrepdf = load_joint_eqdf(misrepdf_fpath_name; svm=svm)
-        
+
         # Extract Results
-        misrepdf, matchd = misrep_results_extractor(jf, lmisrepdf, 
+        misrepdf, matchd = misrep_results_extractor(jf, lmisrepdf,
                                                     st_fi_rmp, rt_fi_rmp)
-        
+
         # Check for missing (ft, rmp)-pairs
         f(x) = sum([(x[y] == :unmatched) for y in keys(x)])
         missing_ft_rmp = f(matchd[:st_misrep]) + f(matchd[:rt_misrep]) > 0
     end
-    
+
     if missing_ft_rmp | recompute_df
         # Compute Full Information Solution
         ep_misrep_eqdf = compute_misrep(jf, fidf)
@@ -2790,20 +2917,20 @@ function get_misrep_results(jf, fidf::DataFrame,
                 ep_misrep_eqdf[!, var] .= pd[var]
             end
         end
-        
+       
         # Reshape
         misrepdf = reshape_joint_df(ep_misrep_eqdf; svm=svm)
-        
+
         save_df = true
     else
         # Get list of ID columns
         id_cols = get_jks_id_cols(misrepdf)
-                
+
         # Form DataFrame with Unique Rows
         misrepdf = unique(misrepdf, id_cols)
     end
-    
-    
+
+
     # Save DataFrame
     if save_df
         tt = Dates.now()
@@ -2811,16 +2938,16 @@ function get_misrep_results(jf, fidf::DataFrame,
         fpath_name = string(misrepdf_fpath_name, "_", tt, ".csv")
         CSV.write(fpath_name, misrepdf)
     end
-    
+
     return misrepdf
 end
 
 
 # ** Identify Candidates for JEQ Analysis
-function fi_misrep_analysis(jf, fieqdf::DataFrame, 
-                            misrepdf::DataFrame; 
+function fi_misrep_analysis(jf, fieqdf::DataFrame,
+                            misrepdf::DataFrame;
                             misrep_ic_objf::Symbol=:MBR)
-   
+
     # Get Type-Contingent Objective Function Value
     # st_ic_objf_val = fieqdf[fieqdf[:, :type] .== :st, misrep_ic_objf][1]
     # rt_ic_objf_val = fieqdf[fieqdf[:, :type] .== :rt, misrep_ic_objf][1]
@@ -2829,14 +2956,20 @@ function fi_misrep_analysis(jf, fieqdf::DataFrame,
     for misrep_type in [:st, :rt]
         # misrep_type = ftype
         #ic_objf = ftype == :st ? st_ic_objf : rt_ic_objf
-        
+
         # Check if Type has incentive to misrepresent itself
         misrep_col = misrep_type == :st ? Symbol(:s_, misrep_ic_objf) : Symbol(:r_, misrep_ic_objf)
         misrep_ic_objf_val = fieqdf[fieqdf[:, :type] .== misrep_type, misrep_ic_objf][1]
             # ftype == :st ? st_ic_objf_val : rt_ic_objf_val
 
         type_cond = misrepdf[:, :misrep_type] .== misrep_type
-        misrep_cond = .&(type_cond, misrepdf[:, misrep_col] .> misrep_ic_objf_val)
+
+
+        if misrep_type == :rt
+            misrep_cond = type_cond
+        else
+            misrep_cond = .&(type_cond, misrepdf[:, misrep_col] .> misrep_ic_objf_val)
+        end
 
         # Extract DataFrame
         df = misrepdf[misrep_cond, :]
@@ -2859,24 +2992,24 @@ function fi_misrep_analysis(jf, fieqdf::DataFrame,
                                          :fi_rt_vb => fieqdf[fieqdf[:, :type] .== :rt, :vb][1],
                                          :fi_rt_mu_b => fieqdf[fieqdf[:, :type] .== :rt, :mu_b][1])
 
-                adf = vcat(adf, DataFrame(tmpd))                
+                adf = vcat(adf, DataFrame(tmpd))
             end
         end
     end
-    
-    cols = vcat([:m, :c, :p, :misrep_type, :st_rmp, :rt_rmp, 
+
+    cols = vcat([:m, :c, :p, :misrep_type, :st_rmp, :rt_rmp,
                  :misrep_ic_objf, :misrep_ic_objf_val,
                  :fi_st_mu_b, :fi_st_vb, :fi_rt_mu_b, :fi_rt_vb],
                 jeq_rmp_param_cols)
     adf = hcat(adf, DataFrame(get_joint_identifiers(jf)))
-                
-    
+
+
     return adf[:, cols]
 end
 
 
-function get_joint_eq_inputs(jf, jks, jks_fpath::String; 
-                            fidf::DataFrame=DataFrame(), 
+function get_joint_eq_inputs(jf, jks, jks_fpath::String;
+                            fidf::DataFrame=DataFrame(),
                             fieqdf::DataFrame=DataFrame(),
                             load_fidf::Bool=true,
                             recompute_fidf::Bool=false,
@@ -2886,17 +3019,17 @@ function get_joint_eq_inputs(jf, jks, jks_fpath::String;
                             recompute_misrepdf::Bool=false,
                             save_misrepdf::Bool=true,
                             mu_bN::Int64=20)
-    
+
     # File Path Names
-    fidf_fpath_name = string(jks_fpath, "/", 
-                             eq_type_dict["full_info"][:dfn], ".csv") 
-    misrepdf_fpath_name = string(jks_fpath, "/", 
-                                 eq_type_dict["misrep"][:dfn], ".csv") 
-    pooldf_fpath_name = string(jks_fpath, "/", 
+    fidf_fpath_name = string(jks_fpath, "/",
+                             eq_type_dict["full_info"][:dfn], ".csv")
+    misrepdf_fpath_name = string(jks_fpath, "/",
+                                 eq_type_dict["misrep"][:dfn], ".csv")
+    pooldf_fpath_name = string(jks_fpath, "/",
                                eq_type_dict["pooling"][:dfn], ".csv")
-    sepdf_fpath_name = string(jks_fpath, "/", 
+    sepdf_fpath_name = string(jks_fpath, "/",
                               eq_type_dict["separating"][:dfn], ".csv")
-    
+
     # Full Infotmation Results
     if isempty(fidf)
         fidf, fieqdf = get_fi_results(jf, fidf_fpath_name,
@@ -2907,7 +3040,7 @@ function get_joint_eq_inputs(jf, jks, jks_fpath::String;
         fidf, fieqdf = get_fi_eq(jf; fidf=fidf)
     end
 
-    
+
     # Misrepresentation Results
     if isempty(misrepdf)
         misrepdf = get_misrep_results(jf, fidf, misrepdf_fpath_name;
@@ -2915,17 +3048,17 @@ function get_joint_eq_inputs(jf, jks, jks_fpath::String;
                                       recompute_df=recompute_misrepdf,
                                       save_df=save_misrepdf)
     end
-    
-    # Identify Joint Equilibrium Case 
+
+    # Identify Joint Equilibrium Case
     adf = fi_misrep_analysis(jf, fieqdf, misrepdf)
 
-    
+
     # Compute mu_b grid:
     min_mu_b = .75 * minimum(fidf[:, :mu_b])
     max_mu_b = 1.25 * maximum(fidf[:, :mu_b])
     mu_b_grid = Array(range(min_mu_b, stop=max_mu_b, length=mu_bN))
-    
-    
+
+
     return Dict{Symbol, Any}(:fidf_fpath_name => fidf_fpath_name,
                              :misrepdf_fpath_name => misrepdf_fpath_name,
                              :pooldf_fpath_name => pooldf_fpath_name,
@@ -2955,15 +3088,15 @@ end
 #             misrep_type = adf[row, :misrep_type]
 #             misrep_ic_objf = adf[row, :misrep_ic_objf]
 #             misrep_ic_objf_val = adf[row, :misrep_ic_objf_val]
-            
-            
+
+
 #             sf = getfield(jf.st, st_rmp).fr
 #             rf = nothing
 #             if misrep_type == :st
 #                 sf = nothing
 #                 rf = getfield(jf.rt, rt_rmp).fr
 #             end
-            
+
 #             # Misrepresenting Firm
 #             for rmp in [:nrm ] # [:rm, :nrm]
 #                 # Form misrepresenting firm
@@ -2972,7 +3105,7 @@ end
 #                 if !isnothing(mf)
 #                     sf = misrep_type == :rt ? sf : mf
 #                     rf = misrep_type == :rt ? mf : rf
-                    
+
 #                     jks2 = deepcopy(jks)
 #                     # DO I NEED THIS PART?
 #                     fi_st_vb = adf[row, :fi_st_vb]
@@ -3028,11 +3161,70 @@ end
 # end
 
 
+function compute_jeq_bond_yield_spread(df::DataFrame, sf, rf, eq_type::Symbol;
+                                       jks=JointKStruct(fill(NaN, 10)...),
+                                       min_yield=1e-3, max_yield=5.,
+                                       N=10^5,
+                                       sf_ftype::String="bf",
+                                       rf_ftype::String="bf")
+
+  # Compute Bond Yields and Yield Spreads
+  df[!, :yield] .= NaN
+  df[!, :yield_spd] .= NaN
+
+  if eq_type == :pool
+    for col in [:mu_s, :mu_b, :st_vb]
+        setfield!(jks, col, df[1, col])
+    end
+    setfield!(jks, :rt_vb, df[2, :rt_vb])
+
+    df[!, :yield] .= get_joint_bond_yield(sf, rf; jks=jks,
+                                  Vt=sf.pm.V0,
+                                  min_yield=min_yield, 
+                                  max_yield=max_yield,
+                                  N=N, sf_ftype=sf_ftype,
+                                  rf_ftype=rf_ftype)
+
+    df[!, :yield_spd] .= JointEq.get_joint_bond_spread(sf, rf; jks=jks,
+                                         Vt=sf.pm.V0,
+                                         min_yield=min_yield, 
+                                         max_yield=max_yield,
+                                         N=N, sf_ftype=sf_ftype,
+                                         rf_ftype=rf_ftype)
+
+  elseif eq_type == :sep
+      tmpd = Dict{Symbol, Any}(:st => [sf, 1],
+                               :rt => [rf, 2])
+      KS = Dict{Symbol, Float64}()
+      for ft in keys(tmpd)
+        fr = tmpd[ft][1]
+        fr_row = tmpd[ft][2]
+        ftype = ft == :st ? sf_ftype : rf_ftype
+
+        for x in [:mu_b, :m, :c, :p]
+          KS[x] = df[fr_row, x]
+        end
+        KS[:vbl] = df[fr_row, :vb]
+
+        df[fr_row, :yield] = get_bond_yield(fr; KS=KS, min_yield=min_yield,
+                                     max_yield=max_yield, N=N, ftype=ftype)
+        df[fr_row, :yield_spd] = get_bond_spread(fr; KS=KS, min_yield=min_yield,
+                                          max_yield=max_yield, N=N, ftype=ftype)
+      end
+  end
+
+  return df
+end
+
+
 function compute_type_contingent_jeq_eq(jf,
                                         eq_type::Symbol,
                                         jks, adf::DataFrame,
                                         mu_b_grid::Array{Float64, 1};
-                                        jeq_objf::Symbol=:exp_firm_value)
+                                        jeq_objf::Symbol=:exp_firm_value,
+                                        min_yield::Float64=1e-3, max_yield::Float64=5.,
+                                        N::Int64=10^5, sf_ftype="bf", rf_ftype="bf")
+
 
     # If type has incentive for misrepresentation,
     # compute joint pooling equilibrium
@@ -3044,7 +3236,7 @@ function compute_type_contingent_jeq_eq(jf,
             misrep_type = adf[row, :misrep_type]
             misrep_ic_objf = adf[row, :misrep_ic_objf]
             misrep_ic_objf_val = adf[row, :misrep_ic_objf_val]
-            
+
             sf = getfield(jf.st, st_rmp).fr
             rf = getfield(jf.rt, rt_rmp).fr
 
@@ -3056,10 +3248,11 @@ function compute_type_contingent_jeq_eq(jf,
             setfield!(jks2, :fi_st_vb, fi_st_vb)
             setfield!(jks2, :fi_rt_vb, fi_rt_vb)
 
-            
-            # Compute Pooling Eq Resuls
-            if eq_type == :pool 
-                tmpdf = get_pool_eqdf(sf, rf, jks2, 
+
+            # Compute Pooling Eq Results
+            tmpdf=DataFrame()
+            if eq_type == :pool
+                tmpdf = get_pool_eqdf(sf, rf, jks2,
                                       mu_b_grid,
                                       misrep_type,
                                       misrep_ic_objf_val;
@@ -3075,8 +3268,17 @@ function compute_type_contingent_jeq_eq(jf,
                                      misrep_ic_objf_val;
                                      misrep_ic_objf=misrep_ic_objf,
                                      jeq_objf=jeq_objf)
-                
+
             end
+
+            # Compute Bond Yields and Yield Spreads
+            tmpdf = compute_jeq_bond_yield_spread(tmpdf, sf, rf, eq_type;
+                                                  jks=jks2, 
+                                                  min_yield=min_yield, 
+                                                  max_yield=max_yield,
+                                                  N=N, sf_ftype=sf_ftype,
+                                                  rf_ftype=rf_ftype)
+
 
             tmpdf[!, :eq_type] .= eq_type
             tmpdf[!, :datetime] .= Dates.now()
@@ -3094,7 +3296,7 @@ function compute_type_contingent_jeq_eq(jf,
             # Reshape DataFrame
             tmpdf_rsp = reshape_joint_df(tmpdf)
 
-            # Append to main dataframe 
+            # Append to main dataframe
             jeqdf = vcat(jeqdf, tmpdf_rsp)
         end
     end
@@ -3110,45 +3312,45 @@ function get_jeq_results(jf, jks, eq_type::Symbol,
                          load_df::Bool=true,
                          recompute_df::Bool=false,
                          save_df::Bool=true)
-    
+
     if eq_type in [:pool, :pooling]
         fpath_name = jeqid[:pooldf_fpath_name]
     elseif eq_type in [:sep, :separating]
         fpath_name = jeqid[:sepdf_fpath_name]
     else
-        println(string("Error! Equilibrium type not recognized.\n", 
+        println(string("Error! Equilibrium type not recognized.\n",
                        "Please enter :pool or :sep. \nExiting..."))
         return
     end
 
-    missing_ft_rmp = false
+    missing_ft_rmp = .&(!load_df, !recompute_df) ? true : false
     df = DataFrame()
     if load_df
         # Load  df, extract results
         ldf = load_joint_eqdf(fpath_name; svm=is_svm(jf))
-        
+
         # Extract Results
         df, matchd = jeq_results_extractor(jf, ldf, jeqid, eq_type,
                                            jeq_objf=jeq_objf)
-        
+
         # Check for missing cases
-        missing_ft_rmp = sum([matchd[key] != :matched for key in keys(matchd)]) > 0 
+        missing_ft_rmp = sum([matchd[key] != :matched for key in keys(matchd)]) > 0
     end
 
     if missing_ft_rmp | recompute_df
-        df = compute_type_contingent_jeq_eq(jf, eq_type, jks, 
+        df = compute_type_contingent_jeq_eq(jf, eq_type, jks,
                                             jeqid[:adf],
                                             jeqid[:mu_b_grid],
                                             jeq_objf=jeq_objf)
     else
         # Get list of ID columns
         id_cols = get_jks_id_cols(df)
-                
+
         # Form DataFrame with Unique Rows
         df = unique(df, id_cols)
      end
 
-    
+
     if save_df
         fpath_name = string(replace(fpath_name, ".csv" => ""),
                             "_", df[1, :datetime], ".csv")

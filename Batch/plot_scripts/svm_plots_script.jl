@@ -15,7 +15,7 @@ using LaTeXStrings
 
 main_path = "/home/artur/BondPricing"
 module_path = string(main_path, "/", "Julia/modules/")
-modls = ["Batch", "ModelObj", "AnalyticFunctions", 
+modls = ["Batch", "ModelObj", "AnalyticFunctions",
          "BondPrInterp", "EqFinDiff", "ModelPlots"]
 for modl in modls
     include(string(joinpath(module_path, modl), ".jl"))
@@ -27,16 +27,16 @@ svm_m=1.
 obj_funs = [:firm_value] #, :mbr]
 
 
-z_vars = [:c, :p, :vb, :debt, :equity, :firm_value, :leverage, :MBR]
+z_vars = [:c, :p, :vb, :debt, :equity, :firm_value, :leverage, :MBR, :yield_spd]
 
-graph_dict1 = Dict{Symbol, Any}(:azim => 50., 
-                                :heat_reverse_y => false, 
+graph_dict1 = Dict{Symbol, Any}(:azim => 50.,
+                                :heat_reverse_y => false,
                                 :heat_reverse_x => false,
                                 :cbaxes => [.925, 0.15, 0.015, 0.675],
                                 :axs_wspace => .2)
 
-graph_dict2 = Dict{Symbol, Any}(:azim => -50., 
-                                :heat_reverse_y => true, 
+graph_dict2 = Dict{Symbol, Any}(:azim => -50.,
+                                :heat_reverse_y => true,
                                 :heat_reverse_x => true,
                                 :cbaxes => [.975, 0.15, 0.015, 0.675],
                                 :axs_wspace => .1)
@@ -56,29 +56,45 @@ return_fig=false
 # ####################################################################
 
 bt = Batch.BatchObj()
+
+# Restrict maturity
+bt.bp._param_values_dict[:m] = [svm_m]
+
 for obj_fun in obj_funs
     for plt_type in keys(plt_inputs)
         xy_list = plt_inputs[plt_type][1]
         fig_name_vars = [x for x in ModelPlots.svm_plots_title_params_order if !(x in xy_list)]
         combinations = ModelPlots.plots_form_combinations(bt, fig_name_vars)
+
+        # If I want a dataframe:
+        # tmp = DataFrame(transpose(hcat([combinations...]...)))
+        # rename!(tmp, fig_name_vars)
+
         for comb in combinations
         fixed_params = Dict(zip(fig_name_vars, comb))
             pt = ModelPlots.PlotsObj(bt; firm_obj_fun=obj_fun, svm_m=svm_m)
             pt = ModelPlots.set_svm_surf(pt, fixed_params)
-            
+
             for z in z_vars
                 graph_dict = plt_inputs[plt_type][2]
                 if z == :equity
                     graph_dict = plt_inputs[plt_type][3]
                 end
-                
+
+                if z == :yield_spd
+                  graph_dict[:azim] = -30.
+                end
+
+                println(plt_type)
+                println(comb)
+                println(z)
                 ModelPlots.svm_plot_heatmap_surf(pt, xy_list, z, fixed_params;
                                                  heat_reverse_x=graph_dict[:heat_reverse_x],
                                                  heat_reverse_y=graph_dict[:heat_reverse_y],
                                                  elev=25., azim=graph_dict[:azim], #zpad=10.,
-                                                 ax1_dist=ax1_dist, 
-                                                 cbaxes=graph_dict[:cbaxes], 
-                                                 axs_wspace=graph_dict[:axs_wspace], 
+                                                 ax1_dist=ax1_dist,
+                                                 cbaxes=graph_dict[:cbaxes],
+                                                 axs_wspace=graph_dict[:axs_wspace],
                                                  plt_cmap=plt_cmap,
                                                  seaborn_style=seaborn_style,
                                                  return_fig=return_fig)

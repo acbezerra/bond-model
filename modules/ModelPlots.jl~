@@ -869,9 +869,12 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     # ############################################
     # ############### Axis Format: ###############
     # ############################################
+
+    println("here")
+
     title_list = [string("\$", pt.xylabels[x][1], "=\$ ", pt.xylabels[x][2]) 
-                        for x in keys(pt.xylabels) if !(x in xy_list)]
-    title_values = [fixed_params[x] for x in keys(pt.xylabels) if !(x in xy_list)]                                        
+                        for x in keys(pt.xylabels) if !(x in vcat(xy_list, :mu_s))]
+    title_values = [fixed_params[x] for x in keys(pt.xylabels) if !(x in vcat(xy_list, :mu_s))]                                        
      
 
     svmdf = deepcopy(pt._svm_surf)
@@ -880,8 +883,9 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     # Localize before changing kappa to basis points:
     cond = true
     for key in keys(fixed_params)
-        cond = .&(cond, (abs.(svmdf[key] .- fixed_params[key]) .< 1e-6))
+        cond = .&(cond, (abs.(svmdf[:, key] .- fixed_params[key]) .< 1e-6))
     end
+
 
     # Sigmah on Y-axis, Kappa on X-axis:
     # if Sigmah & Lambda -> lambda on X-Axis
@@ -889,7 +893,7 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     if .&((:sigmah in xy_list), (:kappa in xy_list))
         cols = vcat([:sigmah, :kappa], [z_var])
         # Kappa in Basis Points:
-        svmdf[:kappa] .= convert.(Int64, svmdf[:kappa] .* 1e4)
+        svmdf[!, :kappa] .= convert.(Int64, svmdf[:, :kappa] .* 1e4)
     elseif .&((:sigmah in xy_list), (:lambda in xy_list))
         cols = vcat([:sigmah, :lambda], [z_var])
         # Kappa in Basis Points
@@ -897,12 +901,12 @@ function svm_plot_heatmap(pt, xy_list, z_var::Symbol,
     else
         cols = vcat([:lambda, :kappa], [z_var])
         # Kappa in Basis Points:
-        svmdf[:kappa] .=  convert.(Int64, svmdf[:kappa] .* 1e4)
+        svmdf[!, :kappa] .=  convert.(Int64, svmdf[:, :kappa] .* 1e4)
     end
 
     # Pivot Table for Plot: ##############################
-    xtickvals = unique(svmdf[cols[2]])
-    ytickvals = unique(svmdf[cols[1]])
+    xtickvals = unique(svmdf[:, cols[2]])
+    ytickvals = unique(svmdf[:, cols[1]])
     pivotdf = unstack(svmdf[cond, cols], cols[1], cols[2], cols[3])
     Z = convert(Matrix, pivotdf[:, [x for x in names(pivotdf) if !(x in cols)]])
 
@@ -982,8 +986,8 @@ function svm_plot_surface(pt, ax, xv, yv, zv,
                     for x in keys(pt.xylabels) if (x in xy_list)]
 
     title_list = [string("\$", pt.xylabels[x][1], "=\$ ", pt.xylabels[x][2]) 
-                        for x in title_params_order if !(x in xy_list)]
-    title_values = [cp_fixed_params[x] for x in title_params_order if !(x in xy_list)]
+                        for x in title_params_order if !(x in vcat(xy_list, :mu_s))]
+    title_values = [cp_fixed_params[x] for x in title_params_order if !(x in vcat(xy_list, :mu_s))]
 
     if isempty(seaborn_style)
         Seaborn.reset_orig()

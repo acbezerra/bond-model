@@ -25,6 +25,9 @@ using ModelObj: Firm, get_obj_model
 using AnalyticFunctions: get_cvm_vb,
                          get_param
 
+using BondPrInterp: get_bond_yield, 
+                    get_bond_spread
+
 using EqFinDiff: eq_fd
 
 using Batch: interp_values, dfcols
@@ -381,7 +384,11 @@ end
 
 
 # * Full Information Equilibrium Functions
-function compute_fi_eq(jf, df::DataFrame, ft::Symbol, rmp::Symbol)
+function compute_fi_eq(jf, df::DataFrame, 
+                       ft::Symbol, rmp::Symbol;
+                       min_yield=1e-3, max_yield=5.,
+                       N=10^5, ftype::String="bf")
+ 
     cond = .&(df[:, :type] .== ft, df[:, :rmp] .== rmp)
     fv(df) = .&(!isempty(df), :firm_value in names(df)) ? df[1, :firm_value] : NaN
     tmp = df[cond, :]
@@ -402,6 +409,20 @@ function compute_fi_eq(jf, df::DataFrame, ft::Symbol, rmp::Symbol)
         tmp[!, :rm_iota] .= pd[:rm_iota]
         tmp[!, :nrm_lambda] .= pd[:nrm_lambda]
         tmp[!, :nrm_sigmah] .= pd[:nrm_sigmah]
+
+        # Compute Yield and Yield Spread
+        ## Set capital structure
+        KS = Dict{Symbol, Float64}()
+        for x in [:mu_b, :m, :c, :p]
+          KS[x] = tmp[1, x]
+        end
+        KS[:vbl] = tmp[1, :vb]
+
+        tmp[!, :yield] .= get_bond_yield(fr; KS=KS, min_yield=min_yield,
+                                         max_yield=max_yield, N=N, ftype=ftype)
+        tmp[!, :yield_spd] .= get_bond_spread(fr; KS=KS, min_yield=min_yield,
+                                              max_yield=max_yield, N=N, ftype=ftype)
+
         
         df = vcat([df[cond .== false, :], tmp]...)
     end
@@ -410,39 +431,61 @@ function compute_fi_eq(jf, df::DataFrame, ft::Symbol, rmp::Symbol)
 end
 
 
-function get_fi_results(jf, fi_fpath_name::String;
-                        rerun_full_info::Bool=false,
-                        save_results::Bool=true)
+#= function get_fi_results(jf, fi_fpath_name::String; =#
+#=                         rerun_full_info::Bool=false, =#
+#=                         save_results::Bool=true, =#
+#=                         min_yield=1e-3, max_yield=5., =#
+#=                         N=10^5, ftype::String="bf") =#
     
-    if .&(isfile(fi_fpath_name), !rerun_full_info)
-        fidf = extract_fi_results(jf, CSV.read(fi_fpath_name))
-    else
-        fidf=get_empty_fidf(:fi)
-        rerun_full_info = true
-    end
+#=     if .&(isfile(fi_fpath_name), !rerun_full_info) =#
+#=         fidf = extract_fi_results(jf, CSV.read(fi_fpath_name)) =#
+#=     else =#
+#=         fidf=get_empty_fidf(:fi) =#
+#=         rerun_full_info = true =#
+#=     end =#
     
-    if rerun_full_info
-        for ft in [:st, :rt], rmp in [:rm, :nrm]
-           fidf = compute_fi_eq(jf, fidf, ft, rmp)
-        end
-    end
+#=     if rerun_full_info =#
+#=         for ft in [:st, :rt], rmp in [:rm, :nrm] =#
+#=            fidf = compute_fi_eq(jf, fidf, ft, rmp; =#
+#=                                 min_yield=min_yield, =# 
+#=                                 max_yield=max_yield, =#
+#=                                 N=N, ftype=ftype) =#
+#=         end =#
+#=     end =#
 
-    if save_results
-        CSV.write(fi_fpath_name, fidf)
-    end
+#=     if save_results =#
+#=         CSV.write(fi_fpath_name, fidf) =#
+#=     end =#
     
-    return fidf
-end
+#=     return fidf =#
+#= end =#
 
 
-function get_fi_eq(jf; fidf::DataFrame=DataFrame())
+function get_fi_eq(jf; fidf::DataFrame=DataFrame(),
+                   min_yield=1e-3, max_yield=5.,
+                   N=10^5, ftype::String="bf")
+
     fieqdf = get_empty_df(:fi)
     fidf = isempty(fidf) ? deepcopy(fieqdf) : fidf
+   
+    for x in [:yield, :yield_spd]
+      if !(x in Symbol.(names(fieqdf)))
+        fieqdf[!, x] .= NaN
+      end
+
+      if !(x in Symbol.(names(fidf)))
+        fidf[!, x] .= NaN
+      end
+    end
+
     for ft in [:st, :rt]
         tmp = fidf[Symbol.(fidf[:, :type]) .== ft, :]
         if size(tmp, 1) < 1
             for rmp in [:rm, :nrm]
-                tmp = compute_fi_eq(jf, tmp, ft, rmp)
+                tmp = compute_fi_eq(jf, tmp, ft, rmp;
+                                    min_yield=min_yield, 
+                                    max_yield=max_yield,
+                                    N=N, ftype=ftype)
             end
             fidf = vcat([fidf, DataFrame(tmp)]...)
         end

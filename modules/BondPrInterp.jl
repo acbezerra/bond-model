@@ -574,67 +574,67 @@ function get_interp_values(svm, vt::Float64,
 end
 
 
-function get_svm_bond_price(svm, vbl::Float64,
-                            ttm::Float64;
-                            Vt::Float64=NaN,
-                            mu_b::Float64=NaN,
-                            c::Float64=NaN,
-                            p::Float64=NaN,
-                            ftype::String="bf")
-    # ####################################
-    # ######## Extract Parameters ########
-    # ####################################
-    if isnan(Vt)
-        Vt = svm.pm.V0
-    end
+#= function get_svm_bond_price(svm, vbl::Float64, =#
+#=                             ttm::Float64; =#
+#=                             Vt::Float64=NaN, =#
+#=                             mu_b::Float64=NaN, =#
+#=                             c::Float64=NaN, =#
+#=                             p::Float64=NaN, =#
+#=                             ftype::String="bf") =#
+#=     # #################################### =#
+#=     # ######## Extract Parameters ######## =#
+#=     # #################################### =#
+#=     if isnan(Vt) =#
+#=         Vt = svm.pm.V0 =#
+#=     end =#
 
-    mu_b, _, c, p = get_k_struct(svm; mu_b=mu_b, m=NaN, c=c, p=p)
-    # ####################################
+#=     mu_b, _, c, p = get_k_struct(svm; mu_b=mu_b, m=NaN, c=c, p=p) =#
+#=     # #################################### =#
     
-    # Maximum vt
-    vtmax = svm.bi.vtmax 
+#=     # Maximum vt =#
+#=     vtmax = svm.bi.vtmax =# 
 
-    vt, vbh, vbhl = compute_jbpr_inputs(svm, Vt, vbl, mu_b, c, p) 
-    # ####################################
-    if vt <= 0
-        return on_default_payoff(vt, vbl, ttm,
-                                 mu_b, svm.m, c, p,
-                                 svm.pm.r, svm.pm.xi,
-                                 svm.pm.kappa, svm.pm.alpha)
-    elseif vt > minimum(svm.bs.vtgrid)
-        rfbond = rfbond_price(ttm, c, p,
-                              svm.pm.r, svm.pm.xi, svm.pm.kappa)
+#=     vt, vbh, vbhl = compute_jbpr_inputs(svm, Vt, vbl, mu_b, c, p) =# 
+#=     # #################################### =#
+#=     if vt <= 0 =#
+#=         return on_default_payoff(vt, vbl, ttm, =#
+#=                                  mu_b, svm.m, c, p, =#
+#=                                  svm.pm.r, svm.pm.xi, =#
+#=                                  svm.pm.kappa, svm.pm.alpha) =#
+#=     elseif vt > minimum(svm.bs.vtgrid) =#
+#=         rfbond = rfbond_price(ttm, c, p, =#
+#=                               svm.pm.r, svm.pm.xi, svm.pm.kappa) =#
 
-        if vt > vtmax
-               return rfbond 
-        end
+#=         if vt > vtmax =#
+#=                return rfbond =# 
+#=         end =#
 
-        # Maturity or Default prior to Volatility Shock:
-        cf0 = no_vol_shock_cf_pv(vt, vbl, ttm,
-                                 mu_b, svm.m,
-                                 c, p,
-                                 svm.pm.sigmal,
-                                 svm.pm.r, svm.pm.gross_delta,
-                                 svm.pm.xi, svm.pm.kappa,
-                                 svm.pm.alpha, svm.pm.lambda)
+#=         # Maturity or Default prior to Volatility Shock: =#
+#=         cf0 = no_vol_shock_cf_pv(vt, vbl, ttm, =#
+#=                                  mu_b, svm.m, =#
+#=                                  c, p, =#
+#=                                  svm.pm.sigmal, =#
+#=                                  svm.pm.r, svm.pm.gross_delta, =#
+#=                                  svm.pm.xi, svm.pm.kappa, =#
+#=                                  svm.pm.alpha, svm.pm.lambda) =#
        
-        f11, f12, f13, f21, f22 = get_interp_values(svm, vt, ttm, vbhl; ftype=ftype)
+#=         f11, f12, f13, f21, f22 = get_interp_values(svm, vt, ttm, vbhl; ftype=ftype) =#
         
-        # Volatility Shock Prior to Maturity:
-        cf1 = c/get_rdisc(svm) * f11 +
-              (p - c/get_rdisc(svm)) * f12 +
-              (svm.pm.alpha * vbh/float(mu_b * svm.m) - c/get_rdisc(svm)) * f13
+#=         # Volatility Shock Prior to Maturity: =#
+#=         cf1 = c/get_rdisc(svm) * f11 + =#
+#=               (p - c/get_rdisc(svm)) * f12 + =#
+#=               (svm.pm.alpha * vbh/float(mu_b * svm.m) - c/get_rdisc(svm)) * f13 =#
        
-        cf2 = c/get_rdisc(svm) * f21 + (p - c/get_rdisc(svm)) * f22 
+#=         cf2 = c/get_rdisc(svm) * f21 + (p - c/get_rdisc(svm)) * f22 =# 
        
-        return min(cf0 + cf1 + cf2, rfbond)
-    else
-        # In this case, firm is so close to default that I just
-        # return the CVM bond price for sigma = sigmal:
-        return get_cvm_bond_price(svm, ttm, svm.pm.sigmal;
-                            Vt=Vt, vb=vbl, mu_b=mu_b, c=c, p=p)
-    end
-end
+#=         return min(cf0 + cf1 + cf2, rfbond) =#
+#=     else =#
+#=         # In this case, firm is so close to default that I just =#
+#=         # return the CVM bond price for sigma = sigmal: =#
+#=         return get_cvm_bond_price(svm, ttm, svm.pm.sigmal; =#
+#=                             Vt=Vt, vb=vbl, mu_b=mu_b, c=c, p=p) =#
+#=     end =#
+#= end =#
 
 
 # Objective is to find V such that the value of the
@@ -789,6 +789,139 @@ function get_svm_debt_price(svm, vbl::Float64;
     return mu_b * sum(bondpr_vec_ref) * dt2
 end
 
+# * Bond Yields 
+function get_svm_bond_price(svm, vbl::Float64,
+                            ttm::Float64;
+                            Vt::Float64=NaN,
+                            mu_b::Float64=NaN,
+                            c::Float64=NaN,
+                            p::Float64=NaN,
+                            ftype::String="bf")
+    # ####################################
+    # ######## Extract Parameters ########
+    # ####################################
+    if isnan(Vt)
+        Vt = svm.pm.V0
+    end
+
+    mu_b, _, c, p = get_k_struct(svm; mu_b=mu_b, m=NaN, c=c, p=p)
+    # ####################################
+    
+    # Maximum vt
+    vtmax = svm.bi.vtmax 
+
+    vt, vbh, vbhl = compute_jbpr_inputs(svm, Vt, vbl, mu_b, c, p) 
+    # ####################################
+    if vt <= 0
+        return on_default_payoff(vt, vbl, ttm,
+                                 mu_b, svm.m, c, p,
+                                 svm.pm.r, svm.pm.xi,
+                                 svm.pm.kappa, svm.pm.alpha)
+    elseif vt > minimum(svm.bs.vtgrid)
+        rfbond = rfbond_price(ttm, c, p,
+                              svm.pm.r, svm.pm.xi, svm.pm.kappa)
+
+        if vt > vtmax
+               return rfbond 
+        end
+
+        # Maturity or Default prior to Volatility Shock:
+        cf0 = no_vol_shock_cf_pv(vt, vbl, ttm,
+                                 mu_b, svm.m,
+                                 c, p,
+                                 svm.pm.sigmal,
+                                 svm.pm.r, svm.pm.gross_delta,
+                                 svm.pm.xi, svm.pm.kappa,
+                                 svm.pm.alpha, svm.pm.lambda)
+       
+        f11, f12, f13, f21, f22 = get_interp_values(svm, vt, ttm, vbhl; ftype=ftype)
+        
+        # Volatility Shock Prior to Maturity:
+        cf1 = c/get_rdisc(svm) * f11 +
+              (p - c/get_rdisc(svm)) * f12 +
+              (svm.pm.alpha * vbh/float(mu_b * svm.m) - c/get_rdisc(svm)) * f13
+       
+        cf2 = c/get_rdisc(svm) * f21 + (p - c/get_rdisc(svm)) * f22 
+       
+        return min(cf0 + cf1 + cf2, rfbond)
+    else
+        # In this case, firm is so close to default that I just
+        # return the CVM bond price for sigma = sigmal:
+        return get_cvm_bond_price(svm, ttm, svm.pm.sigmal;
+                            Vt=Vt, vb=vbl, mu_b=mu_b, c=c, p=p)
+    end
+end
+
+
+# * BOND YIELDS
+function get_bond_yield(svm;
+                        KS::Dict{Symbol, Float64}=Dict{Symbol, Float64}(),
+                        min_yield=1e-3,
+                        max_yield=5.,
+                        N=10^5,
+                        ftype::String="bf")
+    
+    # Capital Structure Variables
+    ks_vec = svm.model == "cvm" ? [:mu_b, :m, :c, :p] : [:mu_b, :m, :c, :p, :vbl]
+    
+    # Check for missing entries and NaN values in the KS dictionary:
+    ks_vec_entries = [x for x in ks_vec if (x in keys(KS))]
+    missing = (ks_vec_entries == ks_vec) ? any([isnan(KS[x]) for x in ks_vec_entries]) : true
+    
+    if missing
+        println("Using Model Object Optimal Capital Structure paramters")
+        
+        if any([getfield(svm.optKS, x)==nothing 
+                        for x in ks_vec])
+            println("Missing optimal capital structure parameters. Exiting...")
+            return
+        end
+        
+        for x in ks_vec
+            KS[x] = getfield(svm.optKS, x)
+        end
+    end
+    
+    # Yield - Bond Price Function
+    ybpr(y) = (KS[:c]/y) * (1 - exp(-y * KS[:m])) + KS[:p] * exp(-y * KS[:m])
+    
+    # Vector of Yield Candidates
+    yield_vec = range(min_yield, stop=max_yield, length=N)
+    
+    # Vector of Bond Prices
+    ybpr_vec = [ybpr(y) for y in yield_vec]
+    
+    
+    # Newly Issued Bond Price
+    nibpr = NaN
+    if svm.model == "cvm"
+        nibpr = get_cvm_bond_price(svm, KS[:m], svm.pm.sigmal; 
+                                   mu_b=KS[:mu_b], m=KS[:m],
+                                   c=KS[:c], p=KS[:p])
+    elseif svm.model == "svm"
+        nibpr = get_svm_bond_price(svm, KS[:vbl], KS[:m]; 
+                                   mu_b=KS[:mu_b], c=KS[:c], 
+                                   p=KS[:p],ftype=ftype)
+    end
+    
+    # Bond Yield
+    return yield_vec[argmin(abs.(ybpr_vec .- nibpr))]
+end
+
+
+function get_bond_spread(svm;
+                        KS::Dict{Symbol, Float64}=Dict{Symbol, Float64}(),
+                        min_yield=1e-3,
+                        max_yield=5.,
+                        N=10^5,
+                        ftype::String="bf")
+
+  byield = get_bond_yield(svm; KS=KS, min_yield=min_yield,
+                          max_yield=max_yield, N=N, ftype=ftype)
+
+  # Spreads in Basis Points
+  return (byield - svm.pm.r) * 10^4
+end
 
 # * END MODULE
 end

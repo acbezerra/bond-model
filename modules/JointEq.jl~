@@ -1654,6 +1654,57 @@ function joint_bond_price(jf, ttm::Float64;
 end
 
 
+function get_joint_bond_yield(jf,
+                              jks=JointKStruct(fill(NaN, 10)...),
+                              mu_s::Float64=NaN,
+                              vt::Float64=NaN, Vt::Float64=NaN,
+                              min_yield=1e-3, max_yield=5.,
+                              N=10^5,
+                              sf_ftype::String="bf",
+                              rf_ftype::String="bf")
+
+    # Yield - Bond Price Function
+    ybpr(y) = (jks.c/y) * (1 - exp(-y * jks.m)) + jks.p * exp(-y * jks.m)
+    
+    # Vector of Yield Candidates
+    yield_vec = range(min_yield, stop=max_yield, length=N)
+    
+    # Vector of Bond Prices
+    ybpr_vec = [ybpr(y) for y in yield_vec]
+    
+    # Newly Issued Bond Price
+    nibpr = joint_bond_price(jf, jks.m;
+                             jks=jks, mu_s=mu_s,
+                             vt=vt, Vt=Vt, 
+                             sf_ftype=sf_ftype, 
+                             rf_ftype=rf_ftype)
+
+    # Bond Yield
+    return yield_vec[argmin(abs.(ybpr_vec .- nibpr))]
+end
+
+
+function get_joint_bond_spread(jf, r::Float64,
+                               jks=JointKStruct(fill(NaN, 10)...),
+                               mu_s::Float64=NaN,
+                               vt::Float64=NaN, Vt::Float64=NaN,
+                               min_yield=1e-3, max_yield=5.,
+                               N=10^5,
+                               sf_ftype::String="bf",
+                               rf_ftype::String="bf")
+
+  byield = get_joint_bond_yield(jf, jks=jks,
+                                mu_s=mu_s, vt=vt, Vt=Vt,
+                                min_yield=min_yield,
+                                max_yield=max_yield,
+                                N=N, sf_ftype=sf_ftype,
+                                rf_ftype=rf_ftype)
+
+  # Spreads in Basis Points
+  return (byield - r) * 10^4
+end
+
+
 function joint_debt_price(jf;
                           jks=JointKStruct(fill(NaN, 10)...),
                           mu_s::Float64=NaN,

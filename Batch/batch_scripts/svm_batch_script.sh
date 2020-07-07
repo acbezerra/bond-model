@@ -10,7 +10,7 @@
 #PBS -l nodes=1:ppn=20,mem=50g
 #PBS -j oe
 #PBS -V
-#PBS -t 1-240
+#PBS -t 1-1600
 ## 150
 
 
@@ -55,4 +55,3 @@ echo vii. Rerun 1st Part Calculations: $skip_sol
 echo viii. Rerun Equity Finite Differences Method: $skip_sol
 
 julia svm_batch_script.jl $param_comb $skip_julia $coupon_pos $skip_c $skip_sol $skip_all_eqfd >> $JULIAWORKDIR/batch.log 2>&1
-

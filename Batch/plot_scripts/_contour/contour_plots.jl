@@ -22,14 +22,14 @@ println(" FULL INFORMATION PLOTS ###############################################
 println("###############################################################################")
 println(" ")
 println(" FI - FIRM VALUE  #############################################################")
-plot_title = ModelPlots.get_contour_plot_title(fidf, fi_funs, :firm_value)
+plot_title = ModelPlots.get_contour_plot_title(fidf, :firm_value)
 file_path_name = ModelPlots.get_contour_plot_path_name(fidf, :fv)
 fi_fv_fig = ModelPlots.plot_iso_contour_curves(fi_fd, fi_funs[:fv];
                                                fig_title=plot_title,
                                                file_path_name=file_path_name)
 println(" ")
 println(" FI - Market-to-Book Ratio  ###################################################")
-plot_title = ModelPlots.get_contour_plot_title(fidf, fi_funs, :MBR)
+plot_title = ModelPlots.get_contour_plot_title(fidf, :MBR)
 file_path_name = ModelPlots.get_contour_plot_path_name(fidf, :mbr)
 fi_mbr_fig = ModelPlots.plot_iso_contour_curves(fi_fd, fi_funs[:mbr];
                                                 fig_title=plot_title,
@@ -42,8 +42,7 @@ println(" MISREPRESENTATION PLOTS ##############################################
 println("###############################################################################")
 println(" ")
 println(" MP - Risky Type's MBR   ######################################################")
-plot_title = ModelPlots.get_contour_plot_title(misrepdf, mp_funs, :MBR,
-                                               diff_fun=true)
+plot_title = ModelPlots.get_contour_plot_title(misrepdf, :MBR, diff_fun=true)
 file_path_name = ModelPlots.get_contour_plot_path_name(misrepdf, :mp_fi_mbr_diff;
                                                        firm_type=:risky)
 mp_fi_mbr_diff_fig = ModelPlots.plot_iso_contour_curves(mp_fd, mp_funs[:mp_fi_mbr_diff];
