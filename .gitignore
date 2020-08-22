@@ -4,3 +4,5 @@ Priorem/
 Results/
 ResultsOld/
 JupyterNotebooks/.ipynb_checkpoints/
+**/jSVM.o*
+
