@@ -1,4 +1,4 @@
-# vim: set fdm=marker : 
+# vim: set fdm=marker :
 
 using Distributions
 using Interpolations
@@ -15,8 +15,11 @@ using LaTeXStrings
 
 using Revise
 
-main_path = "/home/artur/BondPricing"
-module_path = string(main_path, "/", "Julia/modules/")
+dir_vec = rsplit(pwd(), "/")
+pos = [i for i in 1:size(dir_vec,1)
+        if dir_vec[i]=="bond-model"][1]
+main_path = join(dir_vec[1:pos], "/")
+module_path = string(main_path, "/modules/")
 # include(string(joinpath(module_path, "2period"), ".jl"))
 modls = ["2period"] # "ModelPlots",
 for modl in modls
@@ -45,7 +48,7 @@ ilcdf_list = fetch(@spawn [p2m.get_otc_prices(sf, ilc; mu_b_grid=Array(mu_b_grid
                             for ilc in ilc_grid])
 ilcdf = vcat(ilcdf_list...)
 
-otcdf_list = fetch(@spawn [p2m.get_otc_opt_lev(sf; ilc=ilc, df=ilcdf) 
+otcdf_list = fetch(@spawn [p2m.get_otc_opt_lev(sf; ilc=ilc, df=ilcdf)
                             for ilc in unique(ilcdf[:, :ilc])])
 
 otcdf = vcat(otcdf_list...)
@@ -62,9 +65,9 @@ fidf_list = fetch(@spawn [p2m.get_opt_lev(sf, rf; df=df, rq=rq) for rq in rqgrid
 fidf = vcat(fidf_list...)
 
 # Pooling Market Outcomes {{{1
-# pooldf = p2m.get_pool_res(sf, rf, fidf[:, :rq], mu_s_grid[1]; fidf=fidf)  
-pooldf_list = fetch(@spawn [p2m.get_pool_res(sf, rf, fidf[:, :rq], 
-                                             mu_s; fidf=fidf)  
+# pooldf = p2m.get_pool_res(sf, rf, fidf[:, :rq], mu_s_grid[1]; fidf=fidf)
+pooldf_list = fetch(@spawn [p2m.get_pool_res(sf, rf, fidf[:, :rq],
+                                             mu_s; fidf=fidf)
                             for mu_s in mu_s_grid])
 pooldf = vcat(pooldf_list...)
 
@@ -93,9 +96,9 @@ s_otc_fv = otcdf[abs.(otcdf[:, :ilc] .- ilc_otc) .< 1e-5, :s_fi_fv][1]
 s_otc_mbr = otcdf[abs.(otcdf[:, :ilc] .- ilc_otc) .< 1e-5, :s_fi_mbr][1]
 
 
-fi_fv_fun = Dierckx.Spline1D(otcdf[:, :ilc], otcdf[:, :s_fi_fv]; 
+fi_fv_fun = Dierckx.Spline1D(otcdf[:, :ilc], otcdf[:, :s_fi_fv];
                              k=3, bc="extrapolate")
-fun_dict = p2m.get_contour_equilibria_funs(fi_funs, mp_funs, 
+fun_dict = p2m.get_contour_equilibria_funs(fi_funs, mp_funs,
                                        pool_funs, sep_funs,
                                        fi_fv, fi_fv_fun, ilc_otc)
 pltd = p2m.get_eq_contour_mesh_grid(xvals, yvals, fun_dict)
@@ -104,7 +107,7 @@ pltd = p2m.get_eq_contour_mesh_grid(xvals, yvals, fun_dict)
 sf = p2m.firm_initializer(:st, p2m.pardict)
 rf = p2m.firm_initializer(:rt, p2m.pardict)
 
-# Full q grid {{{2 
+# Full q grid {{{2
 xvals = unique(fidf[:, :rq])
 yvals = Array(mu_s_grid)
 ext_fid = p2m.form_eq_dict(fidf; xvals=xvals, yvals=yvals)
@@ -124,10 +127,10 @@ end
 fi_fv = fidf[1, :s_fi_fv]
 
 # OTC Function
-fi_fv_fun = Dierckx.Spline1D(otcdf[:, :ilc], otcdf[:, :s_fi_fv]; 
+fi_fv_fun = Dierckx.Spline1D(otcdf[:, :ilc], otcdf[:, :s_fi_fv];
                              k=3, bc="extrapolate")
 
-ext_fun_dict = p2m.get_contour_equilibria_funs(ext_fi_funs, ext_mp_funs, 
+ext_fun_dict = p2m.get_contour_equilibria_funs(ext_fi_funs, ext_mp_funs,
                                                ext_pool_funs, ext_sep_funs,
                                                fi_fv, fi_fv_fun, ilc_otc)
 ext_pltd = p2m.get_eq_contour_mesh_grid(xvals, yvals, ext_fun_dict)
@@ -138,13 +141,13 @@ rf = p2m.firm_initializer(:rt, p2m.pardict)
 
 
 # Store (q, mu_s)-point results
-ptr = Dict{Symbol, Dict{Symbol, Any}}(:p1 => Dict{Symbol, Any}(:q => .3, 
+ptr = Dict{Symbol, Dict{Symbol, Any}}(:p1 => Dict{Symbol, Any}(:q => .3,
                                                                :mu_s => .7),
-                                      :p2 => Dict{Symbol, Any}(:q => .3, 
+                                      :p2 => Dict{Symbol, Any}(:q => .3,
                                                                :mu_s => .3),
-                                      :p3 => Dict{Symbol, Any}(:q => .75, 
+                                      :p3 => Dict{Symbol, Any}(:q => .75,
                                                                :mu_s => .7),
-                                      :p4 => Dict{Symbol, Any}(:q => .75, 
+                                      :p4 => Dict{Symbol, Any}(:q => .75,
                                                                :mu_s => .3))
 for pt in keys(ptr)
     # ptr[pt][:s_fi_fv] = ext_fi_funs[:s_fi_fv](ptr[pt][:q], ptr[pt][:mu_s])
@@ -170,7 +173,7 @@ end
 ptdf = vcat([DataFrame(ptr[pt]) for pt in keys(ptr)]...)
 rptdf = p2m.df_reshaper(ptdf)
 
-resd = Dict(:sf => sf, :rf => rf, :ptr => ptr, 
+resd = Dict(:sf => sf, :rf => rf, :ptr => ptr,
             :s_otc_fv => s_otc_fv, :s_otc_mbr => s_otc_mbr,
             :ilc_otc => ilc_otc,
             :fid => fid, :ext_fid => ext_fid,

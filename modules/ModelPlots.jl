@@ -1,6 +1,9 @@
-# vim: set fdm=marker : 
+# vim: set fdm=marker :
 
-module_path = "/home/artur/BondPricing/Julia/modules/"
+dir_vec = rsplit(pwd(), "/")
+pos = findall(x -> x .== "bond-model", dir_vec)[1]
+main_path = join(dir_vec[1:pos], "/")
+module_path=string(main_path, "/modules")
 push!(LOAD_PATH, module_path)
 # modnames = ["Batch"]
 # for modl in modnames
@@ -103,7 +106,7 @@ zlabels = Dict{Symbol, Array{String,1}}(:c => ["Coupon", "%.2f"],
                                         :fv => ["Debt + Equity", "%1d"],
                                         :leverage => ["Leverage", "%1d"],
                                         :MBR => ["Market-to-Book Ratio", "%1d"],
-                                        :mbr => ["Market-to-Book Ratio", "%1d"], 
+                                        :mbr => ["Market-to-Book Ratio", "%1d"],
                                         :yield_spd => ["Bond Spreads (b.p.)", "%1d"])
 
 svm_plots_title_params_order = [:mu_b, :m, :iota, :xi, :kappa, :lambda, :sigmal, :sigmah]
@@ -117,7 +120,7 @@ rmp_fname_ext = "png"
 fixed_vars = [:mu_b, :m, :xi, :sigmal]
 cvs_xvars = [:kappa, :lambda, :sigmah]
 
-# Subplots 
+# Subplots
 ax_subplots = Dict{Int64, Array{Int64,1}}(1 => [111],
                                           2 => [211, 212])
 
@@ -3759,7 +3762,7 @@ function nrmp_return_zval(df::DataFrame, xvar::Symbol, xval::Float64,
         return unique(nrmp_cvm_df_slicer(df; tol=tol)[:, zvar])[1]
     else
         tmp(var, val) = isnan(val) ? isnan.(df[:, var]) : abs.(df[:, var] .- val) .< tol
-        
+
         println(string(xvar, ": ", xval, "; ", yvar, ": ", yval))
         if .&(xvar == :mu_s, eq_cond)
             cond = .&(tmp(yvar, yval), df[:, :misrep_type] .== misrep_type)
@@ -4042,7 +4045,7 @@ function nrmp_remove_extra_vals(df::DataFrame)
         if .&(fi_eq_cond, xy == :sigmah)
             val_vec = vcat(svm_param_values_dict[:sigmal], val_vec)
         end
-        
+
         missing_vals = [x for x in unique(df[:, xy_col]) if .&(!(x in val_vec), !isnan.(x))]
         println(missing_vals)
         for val in missing_vals
@@ -4050,7 +4053,7 @@ function nrmp_remove_extra_vals(df::DataFrame)
             df = df[cond, :]
         end
     end
-   
+
     return df
 end
 
@@ -4265,13 +4268,13 @@ function plot_nrmp_iso_contour_curves(fd::Dict{Symbol, Any},
 
     if !isempty(rfd)
         for rf in keys(rfd)
-            ax1.plot(rfd[rf][:x], rfd[rf][:y], color=rfd[rf][:color], 
+            ax1.plot(rfd[rf][:x], rfd[rf][:y], color=rfd[rf][:color],
                      marker=rfd[rf][:marker], markersize=rfd[rf][:ms])
-            ax1.annotate(rfd[rf][:name], 
+            ax1.annotate(rfd[rf][:name],
                          fontsize=rfd[rf][:fontsize],
                          color=rfd[rf][:color],
                          xy=(rfd[rf][:x], rfd[rf][:y]),
-                         xytext=(rfd[rf][:xf] * rfd[rf][:x], 
+                         xytext=(rfd[rf][:xf] * rfd[rf][:x],
                                  rfd[rf][:yf] * rfd[rf][:y]))
         end
     end
@@ -4485,7 +4488,7 @@ function plot_nrmp_equilibria_contour(pltd, eq_type_Z, zvar,
 end
 
 # ** OTC Payoff Functions {{{2
-function interpolate_svmdf(df::DataFrame, 
+function interpolate_svmdf(df::DataFrame,
                            xvar::Symbol, yvar::Symbol;
                            obj_fun::Symbol=:firm_value,
                            zvars::Array{Symbol, 1}=[:MBR, :firm_value],
@@ -4494,23 +4497,23 @@ function interpolate_svmdf(df::DataFrame,
                            tol::Float64=1e-5,
                            s_interp::Float64=1.)
 
-   
+
     # Filter DataFrame ========================
     # Objective Function
     cond = Symbol.(df[:, :obj_fun]) .== obj_fun
-    
+
     # Maturity
     cond = .&(cond, abs.(df[:, :m] .- m) .< tol)
-    
+
     # Additional variable
     if .&(fixed_var in Symbol.(names(df)), !isnan(fixed_val))
         cond = .&(cond, abs.(df[:, fixed_var] .- fixed_val) .< tol)
    end
-    
+
     # Filter
     df = df[cond, :]
     # ==========================================
-    
+
     # Check values for common parameters
     for col in [:gross_delta, :alpha, :V0, :r, :pi, :xi]
         if size(unique(df[:, col]), 1) > 1
@@ -4518,8 +4521,8 @@ function interpolate_svmdf(df::DataFrame,
             return
         end
     end
-    
-    
+
+
     zd = Dict{Symbol, Any}(:xvar => xvar,
                            :xvals => unique(df[:, xvar]),
                            :yvar => yvar,
@@ -4529,61 +4532,61 @@ function interpolate_svmdf(df::DataFrame,
     for k in zd[:kvals]
         cond = abs.(df[:, :kappa] .- k) .< tol
         tmp = df[cond, vcat(xvar, yvar, zvars...)]
-        
+
         try
             try
-                zfuns =fetch(@spawn [Dierckx.Spline2D(tmp[:, xvar], tmp[:, yvar], 
+                zfuns =fetch(@spawn [Dierckx.Spline2D(tmp[:, xvar], tmp[:, yvar],
                                                       tmp[:, zvar]; s=s_interp)
                                      for zvar in zvars])
                 zd[Symbol(k)] = Dict{Symbol, Any}(zip(zvars, zfuns))
             catch
-                zfuns =fetch(@spawn [Dierckx.Spline2D(tmp[:, xvar], tmp[:, yvar], 
+                zfuns =fetch(@spawn [Dierckx.Spline2D(tmp[:, xvar], tmp[:, yvar],
                                                       tmp[:, zvar]; s=1.5*s_interp)
                                      for zvar in zvars])
                 zd[Symbol(k)] = Dict{Symbol, Any}(zip(zvars, zfuns))
             end
         catch
-           zfuns =fetch(@spawn [Dierckx.Spline2D(tmp[:, xvar], tmp[:, yvar], 
+           zfuns =fetch(@spawn [Dierckx.Spline2D(tmp[:, xvar], tmp[:, yvar],
                                                       tmp[:, zvar]; s=size(tmp, 1))
                                      for zvar in zvars])
            zd[Symbol(k)] = Dict{Symbol, Any}(zip(zvars, zfuns))
-        end        
+        end
    end
-    
+
 
 #     Z = Array{Float64, 2}(unstack(df, xvar, yvar, :firm_value)[:, 2:end])
 #     itp = Interpolations.interpolate(Z, BSpline(Cubic(Line(OnGrid()))))
 #     sitp = Interpolations.scale(itp, xvals, yvals)
-    
+
     return zd
  end
 
-function get_svm_interp_vals(zd, zvar::Symbol, 
-                             xval::Float64, yval::Float64, 
+function get_svm_interp_vals(zd, zvar::Symbol,
+                             xval::Float64, yval::Float64,
                              kappa::Float64)
-    
-    sym(k) = Symbol(zd[:kvals][k])  
+
+    sym(k) = Symbol(zd[:kvals][k])
     zvals = fetch(@spawn [zd[sym(k)][zvar](xval, yval) for k in 1:size(zd[:kvals],1)])
     zfun = Dierckx.Spline1D(zd[:kvals], zvals; k=3, bc="nearest", s=0.0)
-    
+
     return zfun(kappa)
 end
 
 function get_cvm_interp_vals(df, zvar::Symbol, kappa::Float64)
-    
+
     # Safe Type's Firm Value as a function of Transaction Costs Kappa
     cond = abs.(df[:, :iota]) .< 1e-5
     zfun = Dierckx.Spline1D(df[cond, :kappa], df[cond, zvar];
                                  k=3, bc="extrapolate")
- 
+
     return zfun(kappa)
 end
 
 
-function get_fi_interp_vals(cvmdf, svmdf, 
-                            xvar::Symbol, yvar::Symbol, 
+function get_fi_interp_vals(cvmdf, svmdf,
+                            xvar::Symbol, yvar::Symbol,
                             zvar::Symbol, kappa::Float64)
-    
+
     zd = interpolate_svmdf(svmdf, xvar, yvar)
     svmZ = [get_svm_interp_vals(zd, zvar, x, y, kappa) for x in zd[:xvals], y in zd[:yvals]]
     cvmZ = get_cvm_interp_vals(cvmdf, zvar, kappa)
@@ -4595,7 +4598,7 @@ end
 
 function get_otc_payoff_funs(cvmdf::DataFrame, svmdf::DataFrame, kotc::Float64;
                              xvar::Symbol=:sigmah, yvar::Symbol=:lambda,
-                             avals::Array{Float64,1}=Array{Float64}(undef, 0), 
+                             avals::Array{Float64,1}=Array{Float64}(undef, 0),
                              zvars::Array{Symbol, 1}=[:MBR, :firm_value],
                              m::Float64=1.)
 
@@ -4605,7 +4608,7 @@ function get_otc_payoff_funs(cvmdf::DataFrame, svmdf::DataFrame, kotc::Float64;
 
     sigvals = vcat(unique(cvmdf[:, :sigmal]), unique(svmdf[:, :sigmah]))
 
-    # The other variable is either lambda or mu_s, but 
+    # The other variable is either lambda or mu_s, but
     # mu_s is not in svmdf
     avals = isempty(avals) ? unique(svmdf[:, :lambda]) : avals
 
@@ -4621,20 +4624,20 @@ function get_otc_payoff_funs(cvmdf::DataFrame, svmdf::DataFrame, kotc::Float64;
 
     otcd = Dict{Symbol, Any}(:kotc => kotc,
                              :xvar => xvar,
-                             :yvar => yvar, 
+                             :yvar => yvar,
                              :X => X,
                              :Y => Y)
 
     for zvar in zvars
-        
+
         # Adjust name
         szvar = Symbol(lowercase(string(zvar)))
         szvar = szvar == :firm_value ? :fv : szvar
-        
-        otcd[szvar] = Dict(:zvals => get_fi_interp_vals(cvmdf, svmdf, 
+
+        otcd[szvar] = Dict(:zvals => get_fi_interp_vals(cvmdf, svmdf,
                                                        xvar, yvar, zvar, kotc))
     end
-    
+
     return otcd
 end
 
