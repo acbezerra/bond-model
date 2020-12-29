@@ -54,6 +54,7 @@ fig, ax1 = PyPlot.subplots()
 # ax1.set_xlabel('time (s)')
 # ax1.set_ylabel('exp', color=color)
 #
+Seaborn.set_style("darkgrid")
 s_color = "blue"
 r_color = "purple"
 s_cond = df[:, :rq] .== .0
@@ -88,21 +89,91 @@ minimum([smuhat(mu_s, p_s, p_r) for p_s in pgrid, p_r in pgrid])
 # %%
 p2m.setq(rf, q=.3)
 
+
+
+
 # %% POOLING -> adjust get_pool_res to maximize joint firm value
-qgrid = [.3]
-mu_s_grid = .025:.025:.975
+for modl in modls
+    include(string(joinpath(module_path, modl), ".jl"))
+end
+qgrid = [.5]
+rf.q = qgrid[1]
+mu_s_grid = .015:.015:.975
+fidf = p2m.get_opt_lev(sf, rf; )
 pdff = vcat([p2m.get_pool_res(sf, rf, qgrid, mu_s; fidf=fidf) for mu_s in mu_s_grid]...)
 
 # %%
+# mu_s = vcat(.0, mu_s_grid, 1.)
+mu_b = vcat(fidf[:, :r_fi_mu_b], pdff[:, :pool_mu_b], fidf[:, :s_fi_mu_b])
+s_pool_mbr = vcat(fidf[:, :r_fi_mu_b], pdff[:, :pool_mu_b], fidf[:, :s_fi_mu_b])
+opt_mub = Dierckx.Spline1D(mu_s, mu_b; k=3, bc="extrapolate")
+
+# %%
+for modl in modls
+    include(string(joinpath(module_path, modl), ".jl"))
+end
+fg = p2m.plot_pool_mub_mbr(pdff)
+
+
+# %%
+findfirst("bond-model", fpath)[end]
+
+
+
+# %%
+
+
+
+
+# %%
+[split(pwd(), "/") .== "bond-model"]
+
+#  %%
+for modl in modls
+    include(string(joinpath(module_path, modl), ".jl"))
+end
+plot_follder = "/home/artur/BondPricing/bond-model/Plots/M2P/"
+
+
+file_path_name = p2m.get_2pm_contour_plot_path_name(:mbr)
+
+# %%
+# plot_title = p2m.get_2pm_contour_plot_title(sf, eq_type, z;
+#                                             ft=Symbol(ft, :t))
+
+                                            # %%
+fig.suptitle("Optimal Pooling Capital Structure and Shareholders' Payoff \n ",
+             L"$q_s=0.0$, $q_r=", pdff[1, :q])
+
+# %%
+string(L"$q_s=0.0$, $q_r=", pdff[1, :q], L"$")
+
+# %%
+println(L"$q_s=0.0$, $q_r= df[1, :q]")
+
+# %%
+println(L"$\pi$", " \n", "dgfkhjd")
+
+# %%
+sf.sig
+
+# %%
+sf.alpha
+
+# %%
+
+title_eq_type = [eq_type_2pm_title[k][2] for k in keys(eq_type_2pm_title)
+                 if (eq_type_2pm_title[k][1] == eq_type)][1]
+
+# %%
+sf.D
+
+
+# %%
+p2m.eq_type_2pm_title
+
+# %%
 p2m.q_pool_res(sf, rf, .2; fidf=fidf)
-
-# %%
-[mu_s for mu_s in mu_s_grid]
-
-
-
-# %%
-p2m.q_pool_res(sf, rf, .3; fidf=fidf)
 
 # %%
 p2m.get_bpr(sf)

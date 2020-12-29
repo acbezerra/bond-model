@@ -1,4 +1,7 @@
-# vim: set fdm=marker : 
+# vim: set fdm=marker :
+
+# Notes:  
+# List of Matplotlib Markers: https://matplotlib.org/3.3.3/api/markers_api.html?highlight=marker#module-matplotlib.markers
 
 module p2m
 
@@ -53,10 +56,10 @@ mutable struct Firm
 end
 
 function firm_initializer(ft::Symbol, pardict::Dict{Symbol, Float64}; mu_b::Float64=0.)
-        
+
     nd = Distributions.Normal(0., 1)
     rt = Rates(pardict[:rf], pardict[:rbdisc])
-   
+
     muxh = pardict[:mu_factor] * rt.rf - .5 * pardict[:sigma]^2
     smuxl = muxh
     rmuxl = muxh - pardict[:shock_factor] * pardict[:sigma]
@@ -64,10 +67,10 @@ function firm_initializer(ft::Symbol, pardict::Dict{Symbol, Float64}; mu_b::Floa
 
     q = ft == :st ? pardict[:qs] : pardict[:qr]
     muxl = ft == :st ? smuxl : rmuxl
-    
-    return Firm(ft, mu_b, pardict[:V0], 
+
+    return Firm(ft, mu_b, pardict[:V0],
                 pardict[:D], pardict[:alpha],
-                pardict[:pi], q, muxh, muxl, 
+                pardict[:pi], q, muxh, muxl,
                 pardict[:sigma], nd, rt)
 end
 
@@ -83,16 +86,16 @@ function df_add_pars(fr, df)
     for par in [:alpha, :pi, :D, :V0, :sig, :muxl, :muxh,]
         df[!, par] .= getfield(fr, par)
     end
-    
+
     df[!, :rf] .= fr.rt.rf
     df[!, :rbdisc] .= fr.rt.rbdisc
     df[!, :ilc] = df[:, :rbdisc] - df[:, :rf]
-    
+
     return df
 end
 
 
-function df_reshaper(df::DataFrame; 
+function df_reshaper(df::DataFrame;
                      cols::Array{Symbol,1}=[:mu_s, :q, :ft, :zf, :fi, :mp, :pool, :sep])
 
     rdf = DataFrame()
@@ -113,12 +116,12 @@ function df_reshaper(df::DataFrame;
         end
     end
 
-    for row in 1:size(rdf,1) 
+    for row in 1:size(rdf,1)
         for col in [:fi, :mp, :pool, :sep]
             rdf[row, col] = parse(Float64, @sprintf("%.2f", rdf[row, col]))
         end
     end
-        
+
     return sort(rdf[:, cols], [:mu_s, :q], rev=true)
 end
 
@@ -138,7 +141,7 @@ function ps_debtpr(fr, mu_b::Float64; shock::Bool=false)
   return mu_b * ps_bpr(fr, mu_b; shock=shock)
 end
 
-function ps_eqpr(fr, mu_b::Float64; shock::Bool=false) 
+function ps_eqpr(fr, mu_b::Float64; shock::Bool=false)
   mux = shock == false ? fr.muxh : fr.muxl
 
   return exp(-fr.rt.rf) * ((exp(mux + .5 * fr.sig^2) * fr.V0 * cdf(fr.nd, - aux_f(fr, mu_b, shock) + fr.sig))
@@ -172,93 +175,93 @@ end
 
 
 # Get Methods {{{2
-function get_bpr(fr; q::Float64=NaN, mu_b::Float64=NaN) 
+function get_bpr(fr; q::Float64=NaN, mu_b::Float64=NaN)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     return bpr(fr, fr.mu_b)
 end
 
-function get_yield(fr; q::Float64=NaN, mu_b::Float64=NaN) 
+function get_yield(fr; q::Float64=NaN, mu_b::Float64=NaN)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     yd = any([isnan(fr.mu_b), abs.(fr.mu_b) <1e-5]) ? NaN : - log(bpr(fr, fr.mu_b)/fr.D)
     return yd
 end
 
-function get_dpr(fr; q::Float64=NaN, mu_b::Float64=NaN) 
+function get_dpr(fr; q::Float64=NaN, mu_b::Float64=NaN)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     return debtpr(fr, fr.mu_b)
 end
 
-function get_epr(fr; q::Float64=NaN, mu_b::Float64=NaN) 
+function get_epr(fr; q::Float64=NaN, mu_b::Float64=NaN)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
-    return eqpr(fr, fr.mu_b) 
+
+    return eqpr(fr, fr.mu_b)
 end
 
-function get_fv(fr; q::Float64=NaN, mu_b::Float64=NaN) 
+function get_fv(fr; q::Float64=NaN, mu_b::Float64=NaN)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     return (debtpr(fr, fr.mu_b) + eqpr(fr, fr.mu_b))
 end
 
-function get_mbr(fr; q::Float64=NaN, mu_b::Float64=NaN) 
+function get_mbr(fr; q::Float64=NaN, mu_b::Float64=NaN)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     return mbr(fr, fr.mu_b)
 end
 
-function get_misrep_fv(sf, rf; 
-                       sq::Float64=NaN, rq::Float64=NaN, 
+function get_misrep_fv(sf, rf;
+                       sq::Float64=NaN, rq::Float64=NaN,
                        mu_b::Float64=NaN)
     # Safe Firm
     sf = setq(sf; q=sq)
     sf = set_mu_b(sf; mu_b=mu_b)
-    
+
     # Risky Firm
     rf = setq(rf; q=rq)
     rf = set_mu_b(rf; mu_b=mu_b)
-    
-    
+
+
     rE1 = get_epr(rf; mu_b=mu_b)
     sD1 = get_dpr(sf; mu_b=mu_b)
-    
+
     return  rE1 + sD1
 end
 
-function get_misrep_mbr(sf, rf; 
-                        sq::Float64=NaN, rq::Float64=NaN, 
+function get_misrep_mbr(sf, rf;
+                        sq::Float64=NaN, rq::Float64=NaN,
                         mu_b::Float64=NaN)
     # Safe Firm
     sf = setq(sf; q=sq)
     sf = set_mu_b(sf; mu_b=mu_b)
-    
+
     # Risky Firm
     rf = setq(rf; q=rq)
     rf = set_mu_b(rf; mu_b=mu_b)
-    
-    
+
+
     rE1 = get_epr(rf; mu_b=mu_b)
     sD1 = get_dpr(sf; mu_b=mu_b)
-    
+
     return  rE1 / (rf.V0 - sD1)
 end
 
 
-function get_pool_bpr(sf, rf, mu_s::Float64; 
+function get_pool_bpr(sf, rf, mu_s::Float64;
                       sq::Float64=NaN, rq::Float64=NaN,
                       mu_b::Float64=NaN)
     # Safe Firm
     sf = setq(sf; q=sq)
     sf = set_mu_b(sf; mu_b=mu_b)
-    
+
     # Risky Firm
     rf = setq(rf; q=rq)
     rf = set_mu_b(rf; mu_b=mu_b)
@@ -267,13 +270,13 @@ function get_pool_bpr(sf, rf, mu_s::Float64;
 end
 
 
-function get_pool_debt(sf, rf, mu_s::Float64; 
+function get_pool_debt(sf, rf, mu_s::Float64;
                        sq::Float64=NaN, rq::Float64=NaN,
                        mu_b::Float64=NaN)
     # Safe Firm
     sf = setq(sf; q=sq)
     sf = set_mu_b(sf; mu_b=mu_b)
-    
+
     # Risky Firm
     rf = setq(rf; q=rq)
     rf = set_mu_b(rf; mu_b=mu_b)
@@ -282,13 +285,13 @@ function get_pool_debt(sf, rf, mu_s::Float64;
 end
 
 
-function get_pool_yield(sf, rf, mu_s::Float64; 
+function get_pool_yield(sf, rf, mu_s::Float64;
                         sq::Float64=NaN, rq::Float64=NaN,
                         mu_b::Float64=NaN)
     # Safe Firm
     sf = setq(sf; q=sq)
     sf = set_mu_b(sf; mu_b=mu_b)
-    
+
     # Risky Firm
     rf = setq(rf; q=rq)
     rf = set_mu_b(rf; mu_b=mu_b)
@@ -296,7 +299,7 @@ function get_pool_yield(sf, rf, mu_s::Float64;
     if any([isnan(sf.mu_b), abs.(sf.mu_b) < 1e-5])
       return NaN
     end
-        
+
     return - log(get_pool_bpr(sf, rf, mu_s)/sf.D)
 end
 
@@ -304,13 +307,13 @@ end
 function get_fi_prices(fr; ft::Symbol=Symbol(""),
                     q::Float64=NaN,
                     mu_b_grid::Array{Float64,1}=Array{Float64,1}(),
-                    mu_b_min::Float64=1e-3, 
+                    mu_b_min::Float64=1e-3,
                     mu_b_max::Float64=NaN, mubN::Int64=30)
- 
-  fr = setq(fr; q=q)   
+
+  fr = setq(fr; q=q)
   ft = isempty(String(ft)) ? (abs(fr.q) > 1e-3 ? :r : :s) : ft
 
-  if isempty(mu_b_grid)  
+  if isempty(mu_b_grid)
     mu_b_max = isnan(mu_b_max) ? fr.V0/fr.D : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
   end
@@ -324,40 +327,40 @@ function get_fi_prices(fr; ft::Symbol=Symbol(""),
 
 
   return DataFrame(Symbol(ft, :q) => fr.q,
-                   :mu_b => mu_b_grid, 
+                   :mu_b => mu_b_grid,
                    Symbol(ft, :_bpr) => bpr_vec,
-                   Symbol(ft, :_yield) => yd_vec,  
-                   Symbol(ft, :_debt) => dpr_vec, 
-                   Symbol(ft, :_eq) => epr_vec, 
-                   Symbol(ft, :_fv) => fv_vec, 
+                   Symbol(ft, :_yield) => yd_vec,
+                   Symbol(ft, :_debt) => dpr_vec,
+                   Symbol(ft, :_eq) => epr_vec,
+                   Symbol(ft, :_fv) => fv_vec,
                    Symbol(ft, :_mbr) => mbr_vec)
 end
 
 
 function get_otc_prices(fr, ilc;
                         mu_b_grid::Array{Float64,1}=Array{Float64,1}(),
-                        mu_b_min::Float64=1e-3, 
+                        mu_b_min::Float64=1e-3,
                         mu_b_max::Float64=NaN, mubN::Int64=30)
-    
-    if isempty(mu_b_grid)  
+
+    if isempty(mu_b_grid)
         mu_b_max = isnan(mu_b_max) ? fr.V0/fr.D : mu_b_max
         mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
     end
 
     # Set Bond Investor's Discount Rate
     fr = set_ilc(fr, ilc)
-    
-    ft = abs(fr.q) > 1e-3 ? :r : :s 
-    
+
+    ft = abs(fr.q) > 1e-3 ? :r : :s
+
     otcdf = get_fi_prices(fr; ft=ft, mu_b_grid=Array(mu_b_grid))
-    
+
     return df_add_pars(fr, otcdf)
 end
 
 
-function get_prices(sf, rf; 
-                    sq::Float64=NaN, rq::Float64=NaN, 
-                    mu_b_min::Float64=1e-3, 
+function get_prices(sf, rf;
+                    sq::Float64=NaN, rq::Float64=NaN,
+                    mu_b_min::Float64=1e-3,
                     mu_b_max::Float64=NaN, mubN::Int64=30)
     sf = setq(sf; q=sq)
     rf = setq(rf; q=rq)
@@ -365,7 +368,7 @@ function get_prices(sf, rf;
     mu_b_max = isnan(mu_b_max) ? max(sf.V0/sf.D, rf.V0/rf.D) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
 
-  
+
     sfid = get_fi_prices(sf; ft=:s, mu_b_grid=Array(mu_b_grid))
     rfid = get_fi_prices(rf; ft=:r, mu_b_grid=Array(mu_b_grid))
 
@@ -373,14 +376,14 @@ function get_prices(sf, rf;
 
     df[!, :r_mp_fv] = [get_misrep_fv(sf, rf; mu_b=mu_b) for mu_b in mu_b_grid]
     df[!, :r_mp_mbr] = [get_misrep_mbr(sf, rf; mu_b=mu_b) for mu_b in mu_b_grid]
-        
+
     return df
 end
 
 
-#= function get_prices(sf, rf; =# 
-#=                     sq::Float64=NaN, rq::Float64=NaN, =# 
-#=                     mu_b_min::Float64=1e-3, =# 
+#= function get_prices(sf, rf; =#
+#=                     sq::Float64=NaN, rq::Float64=NaN, =#
+#=                     mu_b_min::Float64=1e-3, =#
 #=                     mu_b_max::Float64=NaN, mubN::Int64=30) =#
 #=     sf = setq(sf; q=sq) =#
 #=     rf = setq(rf; q=rq) =#
@@ -398,7 +401,7 @@ end
 #=     sfid = get_fi_prices(sf; ft=:s, mu_b_grid=Array(mu_b_grid)) =#
 #=     rfid = get_fi_prices(rf; ft=:r, mu_b_grid=Array(mu_b_grid)) =#
 
-#=     rbpr_vec = [get_bpr(rf; mu_b=mu_b) for mu_b in mu_b_grid] =#   
+#=     rbpr_vec = [get_bpr(rf; mu_b=mu_b) for mu_b in mu_b_grid] =#
 #=     ryd_vec = [get_yield(rf; mu_b=mu_b) for mu_b in mu_b_grid] =#
 #=     rdpr_vec = [get_dpr(rf; mu_b=mu_b) for mu_b in mu_b_grid] =#
 #=     repr_vec = [get_epr(rf; mu_b=mu_b) for mu_b in mu_b_grid] =#
@@ -409,27 +412,27 @@ end
 #=     r_misrep_mbr_vec = [get_misrep_mbr(sf, rf; mu_b=mu_b) for mu_b in mu_b_grid] =#
 
 #=     df = DataFrame(:sq => sf.q, :rq => rf.q, =#
-#=                    :mu_b => mu_b_grid, =# 
+#=                    :mu_b => mu_b_grid, =#
 #=                    :s_bpr => sbpr_vec, =#
-#=                    :s_yield => syd_vec, =#  
-#=                    :s_debt => sdpr_vec, =# 
-#=                    :s_eq => sepr_vec, =# 
+#=                    :s_yield => syd_vec, =#
+#=                    :s_debt => sdpr_vec, =#
+#=                    :s_eq => sepr_vec, =#
 #=                    :s_fv => sfv_vec, :s_mbr => smbr_vec, =#
 #=                    :r_bpr => rbpr_vec, =#
 #=                    :r_yield => ryd_vec, =#
-#=                    :r_debt => rdpr_vec, =# 
-#=                    :r_eq => repr_vec, =# 
-#=                    :r_fv => rfv_vec, :r_mbr => rmbr_vec, =# 
+#=                    :r_debt => rdpr_vec, =#
+#=                    :r_eq => repr_vec, =#
+#=                    :r_fv => rfv_vec, :r_mbr => rmbr_vec, =#
 #=                    :r_mp_fv => r_misrep_fv_vec, =#
 #=                    :r_mp_mbr => r_misrep_mbr_vec) =#
-    
+
 #=     return df =#
 #= end =#
 
-function get_opt_lev(sf, rf; df::DataFrame=DataFrame(), 
+function get_opt_lev(sf, rf; df::DataFrame=DataFrame(),
                      sq::Float64=NaN, rq::Float64=NaN,
                      zfuns::Array{Symbol, 1}=zfuns,
-                     mu_b_min::Float64=1e-3, 
+                     mu_b_min::Float64=1e-3,
                      mu_b_max::Float64=NaN, mubN::Int64=30,
                      obj_fun::Symbol=:fv, mubN_ref::Int64=10^5)
 
@@ -441,15 +444,15 @@ function get_opt_lev(sf, rf; df::DataFrame=DataFrame(),
                       mu_b_min=mu_b_min, mu_b_max=mu_b_max,
                       mubN=mubN)
     end
-    
+
     # Filter DataFrame
-    cond = .&(abs.(df[:, :sq] .- sq) .< 1e-5, 
+    cond = .&(abs.(df[:, :sq] .- sq) .< 1e-5,
               abs.(df[:, :rq] .- rq) .< 1e-5)
     tmp = df[cond, :]
-    
+
     # Refine mu_b Grid
     mu_b_grid_ref = range(minimum(tmp[:, :mu_b]), stop=maximum(tmp[:, :mu_b]), length=mubN_ref)
-   
+
     fidf = DataFrame(:sq => sq, :rq => rq)
     #= mpdf = DataFrame(:sq => sq, :rq => rq) =#
     s_opt_mu_b = NaN
@@ -458,10 +461,10 @@ function get_opt_lev(sf, rf; df::DataFrame=DataFrame(),
         objf = Dierckx.Spline1D(tmp[:, :mu_b], tmp[:, Symbol(ft, obj_fun)]; k=3)
         opt_mu_b = mu_b_grid_ref[argmax([objf(mub) for mub in mu_b_grid_ref])]
         col = Symbol(ft, :fi_mu_b)
-        fidf[!, col] .= opt_mu_b 
+        fidf[!, col] .= opt_mu_b
         s_opt_mu_b = ft == :s_ ? opt_mu_b : s_opt_mu_b
 
-        # Interpolate Prices 
+        # Interpolate Prices
         prvec = zfuns
 
         # Full Information Payoffs
@@ -488,10 +491,10 @@ function get_opt_lev(sf, rf; df::DataFrame=DataFrame(),
       zpdf = Symbol(:r_mp_fi_, z, :_perc_diff)
       fidf[!, zpdf] = (fidf[!, zdf] ./ fidf[:, Symbol(:r_fi_, z)]) .* 100.
     end
-   
+
     fidf[!, :eq_type] .= :fi
 
-    return fidf 
+    return fidf
 end
 
 
@@ -499,34 +502,34 @@ function get_otc_opt_lev(fr; ilc::Float64=NaN,
                          df::DataFrame=DataFrame(), q::Float64=NaN,
                          zfuns::Array{Symbol, 1}=p2m.zfuns,
                          mu_b_grid::Array{Float64,1}=Array{Float64,1}(),
-                         mu_b_min::Float64=1e-3, 
+                         mu_b_min::Float64=1e-3,
                          mu_b_max::Float64=NaN, mubN::Int64=30,
                          obj_fun::Symbol=:fv, mubN_ref::Int64=10^5)
-    
+
     # Set Bond Investor's Discount Rate
     if !isnan(ilc)
         fr = set_ilc(fr, ilc)
     else
         ilc = fr.rt.rbdisc - fr.rt.rf
     end
-    
+
     if isempty(mu_b_grid)
         mu_b_max = isnan(mu_b_max) ? fr.V0/fr.D : mu_b_max
         mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
     end
-        
+
     q = isnan(q) ? fr.q : q
-    
+
     if isempty(df)
         df = get_otc_prices(fr, ilc; mu_b_grid=Array(mu_b_grid))
     end
-    
+
     # Filter DataFrame
     cond = abs.(df[:, :ilc] .- ilc) .< 1e-5
     tmp = df[cond, :]
-        
+
     # Refine mu_b Grid
-    mu_b_grid_ref = range(minimum(tmp[:, :mu_b]), 
+    mu_b_grid_ref = range(minimum(tmp[:, :mu_b]),
                           stop=maximum(tmp[:, :mu_b]), length=mubN_ref)
 
     otcdf = DataFrame(:eq_type => :otc, :ilc => ilc)
@@ -536,9 +539,9 @@ function get_otc_opt_lev(fr; ilc::Float64=NaN,
     objf = Dierckx.Spline1D(tmp[:, :mu_b], tmp[:, Symbol(ft, obj_fun)]; k=3)
     opt_mu_b = mu_b_grid_ref[argmax([objf(mub) for mub in mu_b_grid_ref])]
     col = Symbol(ft, :fi_mu_b)
-    otcdf[!, col] .= opt_mu_b 
+    otcdf[!, col] .= opt_mu_b
 
-    # Interpolate Prices 
+    # Interpolate Prices
     prvec = zfuns
 
     # Full Information Payoffs
@@ -558,7 +561,7 @@ function setq(fr; q::Float64=NaN)
     if !isnan(q)
         setfield!(fr, :q, q)
     end
-    
+
     return fr
 end
 
@@ -567,16 +570,16 @@ function set_mu_b(fr; mu_b::Float64=NaN)
     if !isnan(mu_b)
         setfield!(fr, :mu_b, mu_b)
     end
-    
+
     return fr
 end
 
-# Set Secondary Market Illiquidity 
+# Set Secondary Market Illiquidity
 function set_ilc(fr, ilc::Float64)
   if !isnan(ilc)
     setfield!(fr.rt, :rbdisc, fr.rt.rf + ilc)
   end
-    
+
   return fr
 end
 
@@ -589,11 +592,11 @@ function get_fi_misrep_res(df::DataFrame, sf, rf)
     cols = vcat([:mu_b, :debt, :equity, :fv, :mbr], misrep_cols...)
     rcols(x) = occursin("mp", string(x)) ? Symbol(:r_, x) : Symbol(:r_fi_, x)
     coln(x) = x == :mu_b ? x : rcols(x)
-    
+
     df2 = DataFrame(:eq_type => :fi)
     for rq in rq_vals
         cond = abs.(df[:, :rq] .- rq) .< 1e-5
-        
+
         tmpd = Dict([coln(col) => df[cond, Symbol(:r_opt_, col)][1] for col in cols])
         tmpd[:q] = rq
         df2 = vcat(df2, DataFrame(tmpd))
@@ -602,7 +605,7 @@ function get_fi_misrep_res(df::DataFrame, sf, rf)
     for col in [col for col in cols if !(col in misrep_cols)]
         df2[!, Symbol(:s_fi_, col)] .= df[1, Symbol(:s_opt_, col)]
     end
-    
+
     common_cols = [:q, :mu_b]
     s_cols = [Symbol(:s_fi_, col) for col in cols if !(col in vcat(common_cols, misrep_cols))]
     r_cols = [rcols(col) for col in cols if !(col in common_cols)]
@@ -610,43 +613,43 @@ function get_fi_misrep_res(df::DataFrame, sf, rf)
 
     return df2[:, cols2]
 end
-  
+
 # JEQ Functions {{{1
 
 # Pooling Functions {{{2
-function mu_b_interp_vals(df, objf::Symbol, mu_b_grid)    
+function mu_b_interp_vals(df, objf::Symbol, mu_b_grid)
     # Interpolate Functions
     funs = [y for y in Symbol.(names(df)) if !(y in [:mu_b, :q])]
     fd = Dict()
     for fun in funs
         fd[fun] = Dierckx.Spline1D(df[:, :mu_b], df[:, fun]; k=3)
     end
-    
+
     # Optimal Leverage
     opt_mu_b = mu_b_grid[argmax(fd[objf](mu_b_grid))]
     dt = Dict([fun => fd[fun](opt_mu_b) for fun in funs])
     dt[:pool_mu_b] = opt_mu_b
     dt[:q] = unique(df[:, :q])[1]
-    
+
     return DataFrame(dt)
 end
 
 
-function q_pool_res(sf, rf, mu_s::Float64; 
+function q_pool_res(sf, rf, mu_s::Float64;
                     fidf::DataFrame=DataFrame(),
-                    mu_b_min::Float64=1e-3, mu_b_max::Float64=NaN, 
+                    mu_b_min::Float64=1e-3, mu_b_max::Float64=NaN,
                     mubN::Int64=15, mubN_ref::Int64=10^4)
     mu_b_max = isnan(mu_b_max) ? maximum([sf.V0/sf.D, rf.V0/rf.D]) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
 
-    fd = Dict([Symbol(ft, :_fi_, zfun) =>  NaN 
-                for ft in [:s, :r], zfun in p2m.zfuns])    
+    fd = Dict([Symbol(ft, :_fi_, zfun) =>  NaN
+                for ft in [:s, :r], zfun in p2m.zfuns])
     if !isempty(fidf)
        cond = abs.(fidf[:, :rq] .- rf.q) .< 1e-5
-       fd = Dict([Symbol(ft, :_fi_, zfun) =>  fidf[cond, Symbol(ft, :_fi_, zfun)][1] 
+       fd = Dict([Symbol(ft, :_fi_, zfun) =>  fidf[cond, Symbol(ft, :_fi_, zfun)][1]
                  for ft in [:s, :r], zfun in zfuns])
     end
-    
+
     mubdf = DataFrame()
     for mu_b in mu_b_grid
         sf = set_mu_b(sf, mu_b=mu_b)
@@ -658,8 +661,8 @@ function q_pool_res(sf, rf, mu_s::Float64;
         pool_debt = get_pool_debt(sf, rf, mu_s)
 
         s_eq = get_epr(sf)
-        s_fv = s_eq + pool_debt 
-        s_mbr = s_eq / (sf.V0 - pool_debt) 
+        s_fv = s_eq + pool_debt
+        s_mbr = s_eq / (sf.V0 - pool_debt)
 
         r_eq = get_epr(rf)
         r_fv = r_eq + pool_debt
@@ -684,9 +687,14 @@ function q_pool_res(sf, rf, mu_s::Float64;
 
         mubdf = vcat(mubdf, DataFrame(tmpd))
     end
-    
+
     mu_b_grid_ref = range(mu_b_min, stop=mu_b_max, length=mubN_ref)
-    pooldf = mu_b_interp_vals(mubdf, :s_pool_fv, mu_b_grid_ref)
+    # pooldf = mu_b_interp_vals(mubdf, :s_pool_fv, mu_b_grid_ref)
+    # NEW
+    mubdf[:, :exp_pool_fv] = (mubdf[:, :mu_s] .* mubdf[:, :s_pool_fv] .+
+                                (1 .- mubdf[:, :mu_s]) .* mubdf[:, :r_pool_fv])
+    pooldf = mu_b_interp_vals(mubdf, :exp_pool_fv, mu_b_grid_ref)
+    # =========================================
 
     # Compute POOL-FI Differences
     for ft in [:s, :r]
@@ -719,25 +727,25 @@ function get_pool_res(sf, rf, qgrid, mu_s::Float64;
         dt = q_pool_res(sf, rf, mu_s; fidf=fidf)
         pooldf = vcat(pooldf, dt)
     end
-    
+
     return pooldf
 end
 
 # Separating Functions {{{2
-function q_sep_res(fidf::DataFrame, sf, rf, rq::Float64; 
-                   mu_b_min::Float64=1e-3, mu_b_max::Float64=NaN, 
+function q_sep_res(fidf::DataFrame, sf, rf, rq::Float64;
+                   mu_b_min::Float64=1e-3, mu_b_max::Float64=NaN,
                    mubN::Int64=15, mubN_ref::Int64=10^4)
 
     sf = setq(sf, q=.0)
     rf = setq(rf, q=rq)
-    
+
     mu_b_max = isnan(mu_b_max) ? maximum([sf.V0/sf.D, rf.V0/rf.D]) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
     mu_b_grid_ref = range(mu_b_min, stop=mu_b_max, length=mubN_ref)
-     
+
     cond = abs.(fidf[:, :rq] .- rf.q) .< 1e-5
     r_fi_mbr = fidf[cond, :r_fi_mbr][1]
-    
+
     mubdf = DataFrame()
     for mu_b in mu_b_grid
         sf = set_mu_b(sf, mu_b=mu_b)
@@ -747,22 +755,22 @@ function q_sep_res(fidf::DataFrame, sf, rf, rq::Float64;
                                    :s_bpr => get_bpr(sf),
                                    :s_yield => get_yield(sf),
                                    :s_debt => get_dpr(sf),
-                                   :s_eq => get_epr(sf), 
+                                   :s_eq => get_epr(sf),
                                    :s_fv => get_fv(sf),
                                    :s_mbr => get_mbr(sf),
                                    :r_mp_mbr => get_misrep_mbr(sf, rf))
-        
+
         mubdf = vcat(mubdf, DataFrame(dt))
     end
-    
+
     fd = Dict()
     for fun in [key for key in Symbol.(names(mubdf)) if key != :mu_b]
         fd[fun] = Dierckx.Spline1D(mubdf[:, :mu_b], mubdf[:, fun]; k=3)
     end
-    
+
     # Find separating mu_b value
     r_misrep_mbr_vec = fd[:r_mp_mbr](mu_b_grid_ref)
-    mu_b_vec = mu_b_grid_ref[(r_misrep_mbr_vec .<= r_fi_mbr)] 
+    mu_b_vec = mu_b_grid_ref[(r_misrep_mbr_vec .<= r_fi_mbr)]
     s_sep_mu_b = mu_b_vec[argmax(fd[:s_fv](mu_b_vec))]
 
 
@@ -785,7 +793,7 @@ function q_sep_res(fidf::DataFrame, sf, rf, rq::Float64;
       sepd[Symbol(:r_sep_, zvar)] = fidf[cond, Symbol(:r_fi_, zvar)][1]
     end
     sepd[:eq_type] = :sep
-    
+
     return DataFrame(sepd)
 end
 
@@ -793,21 +801,20 @@ function get_sep_res(sf, rf, fidf::DataFrame)
     sf = setq(sf, q=.0)
     sepdf = DataFrame()
     for rq in fidf[:, :rq]
-        try 
+        try
             rf = setq(rf, q=rq)
             dt = q_sep_res(fidf, sf, rf, rf.q)
             sepdf = vcat(sepdf, dt)
-        catch 
+        catch
             return sepdf
         end
     end
-    
+
     return sepdf
 end
- 
+
 
 # Plot Functions {{{1
-
 # Inputs {{{2
 xylabels = Dict{Symbol, Array{String,1}}(:mu_b => ["\\mu_b", "%.2f"],
                                          :m => ["m", "%.2f"],
@@ -823,7 +830,7 @@ zlabels = Dict{Symbol, Array{String,1}}(:c => ["Coupon", "%.2f"],
                                         :firm_value => ["Debt + Equity", "%1d"],
                                         :fv => ["Debt + Equity", "%1d"],
                                         :leverage => ["Leverage", "%1d"],
-                                        :mbr => ["Market-to-Book Ratio", "%1d"], 
+                                        :mbr => ["Market-to-Book Ratio", "%1d"],
                                         :yield_spd => ["Bond Spreads (b.p.)", "%1d"])
 
 svm_plots_title_params_order = [:mu_b, :m]
@@ -886,7 +893,7 @@ function str_format_fun(a::String,b::Float64)
     return @eval @sprintf($a, $b)
 end
 
-function extract_val(df::DataFrame, xvar::Symbol, x::Float64, 
+function extract_val(df::DataFrame, xvar::Symbol, x::Float64,
                      yvar::Symbol, y::Float64, zvar::Symbol; tol=1e-5)
     cond = true
     if xvar in Symbol.(names(df))
@@ -895,7 +902,7 @@ function extract_val(df::DataFrame, xvar::Symbol, x::Float64,
     if yvar in Symbol.(names(df))
        cond = .&(cond, abs.(df[:, yvar] .- y) .< tol)
     end
-    
+
     return df[cond, zvar][1]
 end
 
@@ -914,7 +921,7 @@ function form_2pm_mesh_grid1(xvals::Array{Float64,1},
 end
 
 
-function form_2pm_mesh_grid(df::DataFrame, xvar::Symbol, 
+function form_2pm_mesh_grid(df::DataFrame, xvar::Symbol,
                             yvar::Symbol, zvar::Symbol;
                             xvals::Array{Float64,1}=Array{Float64,1}(),
                             yvals::Array{Float64,1}=Array{Float64,1}())
@@ -926,9 +933,9 @@ function form_2pm_mesh_grid(df::DataFrame, xvar::Symbol,
     if yvar in Symbol.(names(df))
         cols = vcat(cols, yvar)
     end
-    
+
     tmp = df[:, cols]
-    
+
     if isempty(xvals)
         xvals = unique(tmp[:, xvar])
     end
@@ -938,9 +945,9 @@ function form_2pm_mesh_grid(df::DataFrame, xvar::Symbol,
 
     X = Array(repeat(xvals, 1, size(yvals, 1))')
     Y = Array(repeat(yvals, 1, size(xvals, 1)))
-    Z = Array([extract_val(tmp, xvar, x, yvar, y, zvar) 
+    Z = Array([extract_val(tmp, xvar, x, yvar, y, zvar)
                 for x in xvals, y in yvals]')
-    
+
     return X, Y, Z
 end
 
@@ -967,7 +974,7 @@ end
 
 
 function form_eq_dict(df::DataFrame;
-                      xvar::Symbol=:q, 
+                      xvar::Symbol=:q,
                       xvals::Array{Float64, 1}=Array{Float64, 1}(),
                       yvar::Symbol=:mu_s,
                       yvals::Array{Float64, 1}=Array{Float64, 1}(),
@@ -979,15 +986,15 @@ function form_eq_dict(df::DataFrame;
     if isempty(xvals)
         xvals = unique(df[:, xcol])
     end
-    
+
     if isempty(yvals)
         yvals = unique(df[:, yvar])
     end
-    
-    X, Y, Z = form_2pm_mesh_grid(df, xcol, yvar, 
-                                 Symbol(:s_, eq_type, :_bpr); 
+
+    X, Y, Z = form_2pm_mesh_grid(df, xcol, yvar,
+                                 Symbol(:s_, eq_type, :_bpr);
                                  xvals=xvals, yvals=yvals)
-        
+
     sd = Dict{Symbol, Any}(:df => df,
                            :eq_type => eq_type,
                            :xvar => xvar,
@@ -997,7 +1004,7 @@ function form_eq_dict(df::DataFrame;
                            :yvals => yvals,
                            :Y => Y,
                            :interp => Dict{Symbol, Any}())
-    
+
 
     zcond(x::String) = any([occursin(String(y), x) for y in p2m.zfuns])
     zvars = [Symbol(x) for x in names(df) if .&(zcond(x), Symbol(x) != :eq_type)]
@@ -1005,18 +1012,18 @@ function form_eq_dict(df::DataFrame;
         _, _, Z = form_2pm_mesh_grid(df, xcol, yvar, zvar;
                                      xvals=xvals, yvals=yvals)
         sd[zvar] = Dict(:zvals => Z')
-        
+
         sd[:interp][zvar] = Dierckx.Spline2D(sd[:xvals], sd[:yvals],
                                              sd[zvar][:zvals]; kx=kx, ky=ky)
     end
-    
+
     return sd
 end
 
 function get_2pm_contour_plot_path_name(zvar::Symbol;
-                                        plot_folder::String="/home/artur/BondPricing/Julia/Plots/M2P",
+                                        plot_folder::String="/home/artur/BondPricing/bond-model/Plots/M2P",
                                         contour_fname_ext::String="eps")
-    
+
     return string(plot_folder, "/", zvar, ".", contour_fname_ext)
 end
 
@@ -1060,11 +1067,11 @@ function get_contour_equilibria_funs(fi_funs, mp_funs, pool_funs, sep_funs,
     return fun_dict
 end
 
- 
+
 # Full Information v.s. Misrepresentation {{{2
-function plot_fi_misrep(df::DataFrame; 
+function plot_fi_misrep(df::DataFrame;
                         figaspect::Float64=.8)
-    
+
     #= q_vals = vcat(.0, df[:, :q]) =#
     #= fi_fv_vals = vcat(df[1, :s_fi_fv], df[:, :r_fi_fv]) =#
     #= misrep_fv_vals = vcat(df[1, :s_fi_fv], df[:, :r_misrep_fv]) =#
@@ -1106,10 +1113,58 @@ function plot_fi_misrep(df::DataFrame;
 
     fig.suptitle("Full Information v.s. Misrepresentation Payoffs")
     fig.tight_layout(pad=1.8)
-    
+
     return fig
 end
+# Creditors' Beliefs and Optimal Pooling Measures {{{2
+function plot_pool_mub_mbr(df::DataFrame;
+                           file_path_name::String="", 
+                           fig_size_x::Int64=6,
+                           fig_size_y::Int64=6,
+                           fig_aspect=.85,
+                           fname::String="pool_mub_vs_mbr",
+                           fig_dpi::Int64=iso_plt_inputs[:fig_dpi],
+                           mub_color::String="blue",
+                           s_mbr_color::String="lightseagreen",
+                           r_mbr_color::String="lightcoral",
+                           save_fig::Bool=true)
 
+    Seaborn.set_style("darkgrid")
+    fig, axs = PyPlot.subplots(2, 1, figsize=(fig_size_x, fig_size_y), sharex=true)
+
+    # Optimal Measure of Bonds
+    # axs[1].plot(df[:, :mu_s], df[:, :pool_mu_b], linestyle="-.", marker="^", markersize=.5, linewidth=.5, colormub_color)
+    axs[1].plot(df[:, :mu_s], df[:, :pool_mu_b], linestyle="-.", linewidth=1.1, color=mub_color)
+    axs[1].set_title("Optimal Measure of Bonds")
+
+    # Shared x-axis
+    axs[1].set_ylabel(L"$\mu_b$")
+
+    # Market-to-Book Ratios
+    axs[2].plot(df[:, :mu_s], df[:, :s_pool_mbr], linestyle="--", label="safe", color=s_mbr_color)
+    axs[2].plot(df[:, :mu_s], df[:, :r_pool_mbr], linestyle="-.", label="risky", color=r_mbr_color)
+    axs[2].legend()
+    axs[2].set_ylabel(L"$MBR_j\left(\mu_b \vert \gamma \right)$")
+    axs[2].set_title("Market-to-Book Ratio of Equity")
+    axs[2].set_xlabel(L"$p_s^{\gamma}$")
+
+    # Title and Parameters
+    fig.suptitle(string("Optimal Pooling Capital Structure and Shareholders' Payoff \n", L"for $q_s=0.0$, $q_r=", df[1, :q], L"$, $s_f=1.0$, $\sigma=0.3$"))
+
+    # Save Fig
+    if save_fig
+        fpath = pwd()
+        fpath = string(fpath[1:findfirst("bond-model", fpath)[end]], "/Plots/M2P")
+        file_path_name = string(fpath, "/", fname, ".eps")
+
+        println("Saving plot to ", fpath)
+        println("Plot name: ", fname)
+        PyPlot.savefig(file_path_name, dpi=fig_dpi, bbox_inches="tight")
+    end
+
+    return fig
+end
+# }}}2
 # Contour Plots {{{2
 function get_2pm_contour_plot_title(fr, eq_type::Symbol,
                                     zvar::Symbol;
@@ -1120,7 +1175,7 @@ function get_2pm_contour_plot_title(fr, eq_type::Symbol,
                                     params_list::Array{Symbol,1}=[:V0, :D, :sig],
                                     s_fi_fv::Float64=NaN, s_otc_fv::Float64=NaN)
 
-    title_eq_type = [eq_type_2pm_title[k][2] for k in keys(eq_type_2pm_title) 
+    title_eq_type = [eq_type_2pm_title[k][2] for k in keys(eq_type_2pm_title)
                      if (eq_type_2pm_title[k][1] == eq_type)][1]
 
     if !isnan(mu_s)
@@ -1130,7 +1185,7 @@ function get_2pm_contour_plot_title(fr, eq_type::Symbol,
     title_params = join([[string("\$", contour_2pm_tlabels[x][1], "= \$ ",
                                  p2m.str_format_fun(contour_2pm_tlabels[x][2],
                                                     getfield(fr, x)))
-                          for x in params_list]..., 
+                          for x in params_list]...,
                          string("\$", contour_2pm_tlabels[:rbdisc][1], "= \$ ",
                                 str_format_fun(contour_2pm_tlabels[:rbdisc][2], fr.rt.rbdisc))],  ", ")
 
@@ -1143,8 +1198,8 @@ function get_2pm_contour_plot_title(fr, eq_type::Symbol,
     end
 
     if occursin("diff", String(zdf))
-        differential = occursin("perc", String(zdf)) ? " Differential (%) " : " Differential "        
-        plot_title = latexstring(firm_type_title, 
+        differential = occursin("perc", String(zdf)) ? " Differential (%) " : " Differential "
+        plot_title = latexstring(firm_type_title,
                                  eq_type_2pm_title[eq_type][2],
                                  " v.s. Full Information Eq. ",
                                  contour_2pm_tlabels[zvar][1], differential,
@@ -1190,7 +1245,7 @@ function get_2pm_contour_plot_title(fr, eq_type::Symbol,
         plot_title = latexstring(plot_title,
                                  "\n (Safe Type's OTC Firm Value = ",
                                  str_format_fun("%.2f", s_otc_fv), ") \n")
-    end    
+    end
 
     return plot_title
 end
@@ -1280,7 +1335,7 @@ function plot_2pm_iso_curves(X::Array{Float64,2}, Y::Array{Float64,2}, Z::Array{
         cb1.set_ticklabels(cat_tick_labels)
         cb1.set_clim(1, cat_levels + 1)
     end
-    
+
     return fig, ax1, ax2
 end
 
@@ -1322,7 +1377,7 @@ function plot_2pm_iso_contour_curves(X, Y, Z;
                                         heat_cols=heat_cols,
                                         rmp_cmap=rmp_cmap,
                                         rmp_alpha=rmp_alpha)
-    
+
     if !isempty(fig_title)
         fig.suptitle(fig_title, fontsize=title_font_size)
     end
@@ -1378,14 +1433,14 @@ function plot_2pm_equilibria_iso_contour_curves(X, Y, Z, eq_type_Z;
         dq = 25e-3 * ptd[:p1][:q]
         dmu_s = 25e-3 * ptd[:p1][:mu_s]
         for pt in keys(ptd)
-            ax1.scatter(ptd[pt][:q], ptd[pt][:mu_s], 
-                        marker=ptd[pt][:marker], 
+            ax1.scatter(ptd[pt][:q], ptd[pt][:mu_s],
+                        marker=ptd[pt][:marker],
                         c=ptd[pt][:color],
                         label=string(pt))
-            ax1.annotate(string(pt, "  = (", ptd[pt][:q], ", ", ptd[pt][:mu_s], ")"), 
+            ax1.annotate(string(pt, "  = (", ptd[pt][:q], ", ", ptd[pt][:mu_s], ")"),
                          (ptd[pt][:q] + dq, ptd[pt][:mu_s] + dmu_s))
             # ax2.scatter(ptd[pt][:q], ptd[pt][:mu_s],
-            #             marker=ptd[pt][:marker], 
+            #             marker=ptd[pt][:marker],
             #             c=ptd[pt][:color])
         end
     end
@@ -1408,24 +1463,24 @@ end
 
 
 # Numeric Functions {{{1
-function expected_payoff(fr, x0, f; xf::Float64=10., xN::Int64=10^3) 
-    # muxh = x0 + .5 * fr.sig^2 
-    muxh = fr.rt.rf - .5 * fr.sig^2 
+function expected_payoff(fr, x0, f; xf::Float64=10., xN::Int64=10^3)
+    # muxh = x0 + .5 * fr.sig^2
+    muxh = fr.rt.rf - .5 * fr.sig^2
 
     du = Distributions.Normal(muxh, fr.sig)
     x1grid = range(x0 - xf  * fr.sig, stop=muxh + xf * fr.sig, length=xN)
     d1x = x1grid[2] - x1grid[1]
     yu = sum([f(x1) * pdf(du, x1) for x1 in x1grid]) * d1x
-    
+
     yl = 0.
     if fr.q > 0
         muxl = muxh - 1. * fr.sig
         dl = Distributions.Normal(muxl, fr.sig)
         x1gridl = x1grid .- (muxh - muxl)
-        
+
         yl = sum([f(x1) * pdf(dl, x1) for x1 in x1gridl]) * d1x
     end
-    
+
     return (1 - fr.q) * yu + fr.q * yl # sum([f(x1) * pdf(d, x1) for x1 in x1grid]) * d1x
 end
 
@@ -1438,87 +1493,87 @@ TS(fr) = fr.pi * fr.mu_b * fr.D
 # Bankrupcty Condition
 BKR(fr, x::Float64) = AV(fr, x) + TS(fr) < fr.mu_b*fr.D
 
-function num_bondpr(fr, x1; xf::Float64=10., xN::Int64=10^3) 
+function num_bondpr(fr, x1; xf::Float64=10., xN::Int64=10^3)
     bpr = .0
     if fr.mu_b > 0
-        dp(x2) = BKR(fr, x2) ? fr.alpha * AV(fr, x2) : fr.mu_b*fr.D 
+        dp(x2) = BKR(fr, x2) ? fr.alpha * AV(fr, x2) : fr.mu_b*fr.D
         bpr = exp(-fr.rt.rbdisc) * expected_payoff(fr, x1, dp; xf=xf, xN=xN)/fr.mu_b
     end
-    
+
     return bpr
 end
 
-function num_debtpr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3) 
+function num_debtpr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3)
     return num_bondpr(fr, x1::Float64; xf=xf, xN=xN) * fr.mu_b
 end
 
-function num_eqpr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3) 
-    ep(x) = max(AV(fr, x) + TS(fr) - fr.mu_b * fr.D, .0) 
+function num_eqpr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3)
+    ep(x) = max(AV(fr, x) + TS(fr) - fr.mu_b * fr.D, .0)
     return exp(-fr.rt.rf) * expected_payoff(fr, x1, ep; xf=xf, xN=xN)
 end
 
-function num_mbr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3) 
+function num_mbr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3)
     return num_eqpr(fr, x1; xf=xf, xN=xN) / (fr.V0 - num_debtpr(fr, x1; xf=xf, xN=xN))
 end
 
 # Numeric Get Methods {{{2
-function get_num_dpr(fr; x1::Float64=0., q::Float64=NaN, 
-                  mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3) 
+function get_num_dpr(fr; x1::Float64=0., q::Float64=NaN,
+                  mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     return num_debtpr(fr, x1; xf=xf, xN=xN)
 end
 
-function get_num_epr(fr; x1::Float64=0., q::Float64=NaN, 
-                  mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3) 
+function get_num_epr(fr; x1::Float64=0., q::Float64=NaN,
+                  mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     return num_eqpr(fr, x1; xf=xf, xN=xN)
 end
 
-function get_num_fv(fr; x1::Float64=0., q::Float64=NaN, 
-                 mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3) 
+function get_num_fv(fr; x1::Float64=0., q::Float64=NaN,
+                 mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
-    return (num_debtpr(fr, x1; xf=xf, xN=xN) 
+
+    return (num_debtpr(fr, x1; xf=xf, xN=xN)
             + num_eqpr(fr, x1; xf=xf, xN=xN))
 end
 
-function get_num_mbr(fr; x1::Float64=0., q::Float64=NaN, 
-                  mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3) 
+function get_num_mbr(fr; x1::Float64=0., q::Float64=NaN,
+                  mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     return num_mbr(fr, x1; xf=xf, xN=xN)
 end
 
-function get_num_misrep_mbr(sf, rf; x1::Float64=0., 
-                            sq::Float64=NaN, rq::Float64=NaN, 
-                            mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3) 
+function get_num_misrep_mbr(sf, rf; x1::Float64=0.,
+                            sq::Float64=NaN, rq::Float64=NaN,
+                            mu_b::Float64=NaN, xf::Float64=10., xN::Int64=10^3)
     # Safe Firm
     sf = setq(sf; q=sq)
     sf = set_mu_b(sf; mu_b=mu_b)
-    
+
     # Risky Firm
     rf = setq(rf; q=rq)
     rf = set_mu_b(rf; mu_b=mu_b)
-    
-    
+
+
     rE1 = get_num_epr(rf)
     sD1 = get_num_dpr(sf)
-    
+
     return  rE1 / (rf.V0 - sD1)
 end
 
-function get_num_prices(sf, rf; 
-                        mu_b_min::Float64=.0, 
+function get_num_prices(sf, rf;
+                        mu_b_min::Float64=.0,
                         mu_b_max::Float64=NaN, mubN::Int64=30)
     mu_b_max = isnan(mu_b_max) ? max(sf.V0/sf.D, rf.V0/rf.D) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
-    
+
     sdpr_vec = [get_num_dpr(sf; mu_b=mu_b) for mu_b in mu_b_grid]
     sepr_vec = [get_num_epr(sf; mu_b=mu_b) for mu_b in mu_b_grid]
     rdpr_vec = [get_num_dpr(rf; mu_b=mu_b) for mu_b in mu_b_grid]
@@ -1530,13 +1585,13 @@ function get_num_prices(sf, rf;
     r_misrep_mbr_vec = [get_num_misrep_mbr(sf, rf; mu_b=mu_b) for mu_b in mu_b_grid]
 
     df = DataFrame(:qs => sf.q, :qr => rf.q,
-                   :mu_b => mu_b_grid, 
-                   :s_debt => sdpr_vec, :s_equity => sepr_vec, 
+                   :mu_b => mu_b_grid,
+                   :s_debt => sdpr_vec, :s_equity => sepr_vec,
                    :s_fv => sfv_vec, :s_mbr => smbr_vec,
-                   :r_debt => rdpr_vec, :r_equity => repr_vec, 
-                   :r_fv => rfv_vec, :r_mbr => rmbr_vec, 
+                   :r_debt => rdpr_vec, :r_equity => repr_vec,
+                   :r_fv => rfv_vec, :r_mbr => rmbr_vec,
                    :r_misrep_mbr => r_misrep_mbr_vec)
-    
+
     return df
 end
 
@@ -1547,82 +1602,81 @@ num_drc(fr, x1::Float64) = fr.mu_b*(num_bondpr(fr, x1) - fr.D)
 # Equity Dilution
 num_eq_diff(fr, x::Float64, x1::Float64) = FV(fr, x) + num_drc(fr, x1)
 
-function get_x1(fr, x::Float64; 
-                q::Float64=NaN, mu_b::Float64=NaN, 
-                xf::Float64=3., xN::Int64=10^5) 
-    
+function get_x1(fr, x::Float64;
+                q::Float64=NaN, mu_b::Float64=NaN,
+                xf::Float64=3., xN::Int64=10^5)
+
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     # DELTA x
     diff(x1::Float64) = num_eq_diff(fr, x, x1) - (1 + fr.rt.rf) * fr.V0 * exp(x1)
-    
+
     x1grid = range(x - xf  * fr.sig, stop=x + xf * fr.sig, length=xN)
-    
+
     x1diff = [diff(x1) for x1 in x1grid]
-    
+
     x1star = x1grid[argmin(abs.(x1diff))]
-    
+
     println(diff(x1star))
-    
+
     return x1star#, eqdiff(x, x1star)
 end
 
 function num_default_cond(fr, x1::Float64; q::Float64=NaN, mu_b::Float64=NaN)
-    
+
     # NET CASH FLOW:
     ncf = fr.mu_b*(num_bondpr(fr, x1) - (1-fr.pi) * fr.D)
-    
+
     # Determine Default
     E1 = num_eqpr(fr, x1)
-    
+
     # Default Condition
     return .&(ncf < 0, abs.(ncf) > E1)
 end
 
-# Bond Payoff At time t=1        
-function t1_payoffs(fr, x1::Float64; 
+# Bond Payoff At time t=1
+function t1_payoffs(fr, x1::Float64;
                     q::Float64=NaN, mu_b::Float64=NaN)
-    
+
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
-    
+
     default = false
     bp = .0
     ep = NaN
     x1star = NaN
     if fr.mu_b > 0.
 #         default = default_cond(fr, x1star)
-        
+
         x1star = get_x1(fr, x1)
-        
+
         # NET CASH FLOW:
         ncf = fr.mu_b*(num_bondpr(fr, x1star) - (1-fr.pi) * fr.D)
-        
+
         # Determine Default
         E1 = num_eqpr(fr, x1star)
-        
+
         # Default Condition
         default = .&(ncf < 0, abs.(ncf) > E1)
- 
+
         bp = default ? fr.alpha * FV(fr, x1) / fr.mu_b : fr.D
         ep = default ? 0. : E1
     else
         ep = num_eqpr(fr, x1)
     end
-        
+
     return Dict{Symbol, Any}(:default => default,
                              :x1 => x1,
                              :x1star => x1star,
-                             :bond => bp, :equity => ep)            
-end    
+                             :bond => bp, :equity => ep)
+end
 
 # function t0_prices(fr;
-#                    q::Float64=NaN, mu_b::Float64=NaN, 
+#                    q::Float64=NaN, mu_b::Float64=NaN,
 #                    xf::Float64=3., xN::Int64=10^3)
 #     x1grid = range(- xf  * fr.sig, stop= xf * fr.sig, length=xN)
-    
+
 
 # End Module {{{1
 end
-
