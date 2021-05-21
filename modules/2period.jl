@@ -1,6 +1,6 @@
 # vim: set fdm=marker :
 
-# Notes:  
+# Notes:
 # List of Matplotlib Markers: https://matplotlib.org/3.3.3/api/markers_api.html?highlight=marker#module-matplotlib.markers
 
 module p2m
@@ -17,7 +17,7 @@ using LaTeXStrings
 pardict=Dict{Symbol, Float64}(:mu_s => .2,
                               :V0 => 100.,
                               :Delta => 80.,
-                              :D => 90.,
+                              :p => 90.,
                               :pi => .27,
                               :alpha => .4,
                               :mu_factor => 1.,
@@ -29,6 +29,8 @@ pardict=Dict{Symbol, Float64}(:mu_s => .2,
                               :shock_factor=>.5)
 
 zfuns = [:bpr, :yield, :debt, :eq, :fv, :mbr]
+
+repo_path = "/home/artur/BondPricing/bond-model"
 
 # Model Objects {{{1
 
@@ -43,7 +45,7 @@ mutable struct Firm
 
    mu_b::Float64
    V0::Float64
-   D::Float64
+   p::Float64
    alpha::Float64
    pi::Float64
 
@@ -69,7 +71,7 @@ function firm_initializer(ft::Symbol, pardict::Dict{Symbol, Float64}; mu_b::Floa
     muxl = ft == :st ? smuxl : rmuxl
 
     return Firm(ft, mu_b, pardict[:V0],
-                pardict[:D], pardict[:alpha],
+                pardict[:p], pardict[:alpha],
                 pardict[:pi], q, muxh, muxl,
                 pardict[:sigma], nd, rt)
 end
@@ -78,12 +80,12 @@ end
 # Auxiliary Functions {{{1
 function aux_f(fr, mu_b::Float64, shock::Bool)
   mux = shock == false ? fr.muxh : fr.muxl
-  return (1/fr.sig) * log(((1 - fr.pi) * mu_b * fr.D)/(fr.V0 * exp(mux)))
+  return (1/fr.sig) * log(((1 - fr.pi) * mu_b * fr.p)/(fr.V0 * exp(mux)))
 end
 
 
 function df_add_pars(fr, df)
-    for par in [:alpha, :pi, :D, :V0, :sig, :muxl, :muxh,]
+    for par in [:alpha, :pi, :p, :V0, :sig, :muxl, :muxh,]
         df[!, par] .= getfield(fr, par)
     end
 
@@ -133,7 +135,7 @@ function ps_bpr(fr, mu_b::Float64; shock::Bool=false)
     return 0.
   end
 
-  return (exp(-fr.rt.rbdisc) * (fr.D * cdf(fr.nd, - aux_f(fr, mu_b, shock)) +
+  return (exp(-fr.rt.rbdisc) * (fr.p * cdf(fr.nd, - aux_f(fr, mu_b, shock)) +
            (fr.alpha * fr.V0/mu_b) * exp(mux + .5 * fr.sig^2) * cdf(fr.nd, aux_f(fr, mu_b, shock) - fr.sig)))
 end
 
@@ -145,7 +147,7 @@ function ps_eqpr(fr, mu_b::Float64; shock::Bool=false)
   mux = shock == false ? fr.muxh : fr.muxl
 
   return exp(-fr.rt.rf) * ((exp(mux + .5 * fr.sig^2) * fr.V0 * cdf(fr.nd, - aux_f(fr, mu_b, shock) + fr.sig))
-                           - (1 - fr.pi) * mu_b * fr.D * cdf(fr.nd, - aux_f(fr, mu_b, shock)))
+                           - (1 - fr.pi) * mu_b * fr.p * cdf(fr.nd, - aux_f(fr, mu_b, shock)))
 end
 
 function ps_fv(fr, mu_b::Float64; shock::Bool=false)
@@ -186,7 +188,7 @@ function get_yield(fr; q::Float64=NaN, mu_b::Float64=NaN)
     fr = setq(fr; q=q)
     fr = set_mu_b(fr; mu_b=mu_b)
 
-    yd = any([isnan(fr.mu_b), abs.(fr.mu_b) <1e-5]) ? NaN : - log(bpr(fr, fr.mu_b)/fr.D)
+    yd = any([isnan(fr.mu_b), abs.(fr.mu_b) <1e-5]) ? NaN : - log(bpr(fr, fr.mu_b)/fr.p)
     return yd
 end
 
@@ -300,9 +302,35 @@ function get_pool_yield(sf, rf, mu_s::Float64;
       return NaN
     end
 
-    return - log(get_pool_bpr(sf, rf, mu_s)/sf.D)
+    return - log(get_pool_bpr(sf, rf, mu_s)/sf.p)
 end
 
+function get_max_mub(fr; q=NaN,
+                     min_mub::Float64=1e-1,
+                     max_mub::Float64=3.5,
+                     step_mub::Float64=1e-1)
+    if !isnan(q)
+        fr = p2m.setq(fr; q=q)
+    end
+
+    mub_grid = min_mub:step_mub:max_mub
+    fv  = [get_fv(fr, mu_b=mu_b) for mu_b in mub_grid]
+    mbr = [get_mbr(fr, mu_b=mu_b) for mu_b in mub_grid]
+
+    # Interpolate
+    ifv = Dierckx.Spline1D(mub_grid, fv .- .95 * fr.V0; k=3, bc="extrapolate")
+    imbr = Dierckx.Spline1D(mub_grid, mbr .- .95; k=3, bc="extrapolate")
+
+    max_mub_vec = [ ]
+    if !isempty(Dierckx.roots(ifv, maxn=8))
+        push!(max_mub_vec, maximum(Dierckx.roots(ifv, maxn=8)))
+    end
+    if !isempty(Dierckx.roots(imbr, maxn=8))
+        push!(max_mub_vec, maximum(Dierckx.roots(imbr, maxn=8)))
+    end
+
+    return !isempty(max_mub_vec) ? maximum(max_mub_vec) : max_mub
+end
 
 function get_fi_prices(fr; ft::Symbol=Symbol(""),
                     q::Float64=NaN,
@@ -314,8 +342,9 @@ function get_fi_prices(fr; ft::Symbol=Symbol(""),
   ft = isempty(String(ft)) ? (abs(fr.q) > 1e-3 ? :r : :s) : ft
 
   if isempty(mu_b_grid)
-    mu_b_max = isnan(mu_b_max) ? fr.V0/fr.D : mu_b_max
-    mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
+      # mu_b_max = isnan(mu_b_max) ? fr.V0/fr.p : mu_b_max
+      mu_b_max = isnan(mu_b_max) ? get_max_mub(fr) : mu_b_max
+      mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
   end
 
   bpr_vec = [get_bpr(fr; mu_b=mu_b) for mu_b in mu_b_grid]
@@ -343,7 +372,8 @@ function get_otc_prices(fr, ilc;
                         mu_b_max::Float64=NaN, mubN::Int64=30)
 
     if isempty(mu_b_grid)
-        mu_b_max = isnan(mu_b_max) ? fr.V0/fr.D : mu_b_max
+        # mu_b_max = isnan(mu_b_max) ? fr.V0/fr.p : mu_b_max
+        mu_b_max = isnan(mu_b_max) ? get_max_mub(fr) : mu_b_max
         mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
     end
 
@@ -365,7 +395,7 @@ function get_prices(sf, rf;
     sf = setq(sf; q=sq)
     rf = setq(rf; q=rq)
 
-    mu_b_max = isnan(mu_b_max) ? max(sf.V0/sf.D, rf.V0/rf.D) : mu_b_max
+    mu_b_max = isnan(mu_b_max) ? maximum([get_max_mub(sf) , get_max_mub(rf)]) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
 
 
@@ -388,7 +418,7 @@ end
 #=     sf = setq(sf; q=sq) =#
 #=     rf = setq(rf; q=rq) =#
 
-#=     mu_b_max = isnan(mu_b_max) ? max(sf.V0/sf.D, rf.V0/rf.D) : mu_b_max =#
+#=     mu_b_max = isnan(mu_b_max) ? max(sf.V0/sf.p, rf.V0/rf.p) : mu_b_max =#
 #=     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN) =#
 
 #=     sbpr_vec = [get_bpr(sf; mu_b=mu_b) for mu_b in mu_b_grid] =#
@@ -514,7 +544,8 @@ function get_otc_opt_lev(fr; ilc::Float64=NaN,
     end
 
     if isempty(mu_b_grid)
-        mu_b_max = isnan(mu_b_max) ? fr.V0/fr.D : mu_b_max
+        # mu_b_max = isnan(mu_b_max) ? fr.V0/fr.p : mu_b_max
+        mu_b_max = isnan(mu_b_max) ? get_max_mub(fr) : mu_b_max
         mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
     end
 
@@ -614,6 +645,32 @@ function get_fi_misrep_res(df::DataFrame, sf, rf)
     return df2[:, cols2]
 end
 
+function otc_misrep_mbr(sf, rf, fidf, otcdf, ilc_otc::Float64;
+                        theta::Float64=1.)
+
+    qgrid = fidf[:, :rq]
+    rbdisc_otc = sf.rt.rf + ilc_otc
+    rbdisc_ep = sf.rt.rbdisc
+
+    otc_idx = abs.(otcdf[:, :ilc] .- ilc_otc) .< 1e-10
+    otc_s_mub = otcdf[otc_idx, :s_fi_mu_b][1]
+    otc_s_debt = otcdf[otc_idx, :s_fi_debt][1]
+    otc_mbr_den = sf.V0 - otc_s_mub*otc_s_debt
+
+    otc_eq_r_misrep = [p2m.get_epr(rf; q=q, mu_b=otc_s_mub) for q in qgrid]
+    otc_eq_r_transfer = p2m.ps_eqpr(rf, otc_s_mub; shock=true)
+    otc_mbr_num = otc_eq_r_misrep .- qgrid.* theta .*otc_eq_r_transfer
+    otc_r_mbr = otc_mbr_num ./otc_mbr_den
+
+    ep_r_mbr = fidf[:, :r_fi_mbr]
+
+    return DataFrame(:rbdisc_ep => rbdisc_ep,
+                     :ilc_otc => ilc_otc,
+                     :rbdisc_otc => rbdisc_otc,
+                     :q => qgrid, :theta => theta,
+                     :otc_r_mbr => otc_r_mbr,  :ep_r_mbr => ep_r_mbr)
+end
+# }}}1
 # JEQ Functions {{{1
 
 # Pooling Functions {{{2
@@ -639,7 +696,9 @@ function q_pool_res(sf, rf, mu_s::Float64;
                     fidf::DataFrame=DataFrame(),
                     mu_b_min::Float64=1e-3, mu_b_max::Float64=NaN,
                     mubN::Int64=15, mubN_ref::Int64=10^4)
-    mu_b_max = isnan(mu_b_max) ? maximum([sf.V0/sf.D, rf.V0/rf.D]) : mu_b_max
+
+    # mu_b_max = isnan(mu_b_max) ? maximum([sf.V0/sf.p, rf.V0/rf.p]) : mu_b_max
+    mu_b_max = isnan(mu_b_max) ? maximum([get_max_mub(sf) , get_max_mub(rf)]) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
 
     fd = Dict([Symbol(ft, :_fi_, zfun) =>  NaN
@@ -739,7 +798,8 @@ function q_sep_res(fidf::DataFrame, sf, rf, rq::Float64;
     sf = setq(sf, q=.0)
     rf = setq(rf, q=rq)
 
-    mu_b_max = isnan(mu_b_max) ? maximum([sf.V0/sf.D, rf.V0/rf.D]) : mu_b_max
+    # mu_b_max = isnan(mu_b_max) ? maximum([sf.V0/sf.p, rf.V0/rf.p]) : mu_b_max
+    mu_b_max = isnan(mu_b_max) ? maximum([get_max_mub(sf) , get_max_mub(rf)]) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
     mu_b_grid_ref = range(mu_b_min, stop=mu_b_max, length=mubN_ref)
 
@@ -869,7 +929,7 @@ contour_2pm_tlabels = Dict{Symbol, Array{String,1}}(:mu_s => ["\\mu_s", "%.2f"],
                                                 :rbdisc => ["r^{b, EP}_{disc}", "%.2f"],
                                                 :rbdisc_otc => ["r^{b, OTC}_{disc}", "%.2f"],
                                                 :sig => ["\\sigma", "%.3f"],
-                                                :D => ["D", "%.2f"],
+                                                :p => ["p", "%.2f"],
                                                 :V0 => ["V_0", "%.2f"],
                                                 :debt => ["Debt", "%.1f"],
                                                 :eq => ["Equity", "%.1f"],
@@ -879,7 +939,7 @@ contour_2pm_tlabels = Dict{Symbol, Array{String,1}}(:mu_s => ["\\mu_s", "%.2f"],
                                                 :yield => ["Bond Yield", "%.2f"],
                                                 :yield_spd => ["Bond Spread (b.p.)", "%.f"])
 
-contour_2pm_plots_title_params_order = [:m, :D, :sigmal]
+contour_2pm_plots_title_params_order = [:m, :p, :sigmal]
 
 eq_type_2pm_title = Dict{Symbol, Array{Any,1}}(:fi => [:fi, "Full Information"],
                                                :mp => [:mp, "Misrepresentation"],
@@ -1068,6 +1128,72 @@ function get_contour_equilibria_funs(fi_funs, mp_funs, pool_funs, sep_funs,
 end
 
 
+# Initial Analysis {{{2
+function plot_fi_fv_vs_mbr(df::DataFrame, rq::Float64;
+                        sq::Float64=.0,
+                        fname::String="fi_fv_vs_mbr",
+                        fig_size_x::Int64=7,
+                        fig_size_y::Int64=5,
+                        s_color::String="blue",
+                        r_color::String="red",
+                        linewidth::Float64=.9,
+                        s_fv_linestyle::String="-",
+                        r_fv_linestyle::String="dashdot",
+                        s_mbr_linestyle::String="--",
+                        r_mbr_linestyle::String=":",
+                        fig_dpi::Int64=iso_plt_inputs[:fig_dpi],
+                        save_fig::Bool=true)
+    s_cond = df[:, :rq] .== sq
+    r_cond = df[:, :rq] .== rq
+    s_label = L"\left(q_s = %$sq \right)"
+    r_label = L"\left(q_r = %$rq \right)"
+
+    Seaborn.set_style("darkgrid")
+    fig, ax1 = PyPlot.subplots(1, 1, figsize=(fig_size_x, fig_size_y))
+
+    # Firm Value
+    ax1.plot(df[s_cond, :mu_b], df[s_cond, :s_fv],
+             linewidth=linewidth, label="FV",
+             linestyle=s_fv_linestyle,color=s_color)
+    ax1.plot(df[r_cond, :mu_b], df[r_cond, :r_fv],
+             linewidth=linewidth, label="FV",
+             linestyle=r_fv_linestyle, color=r_color)
+    ax1.set_ylabel("Firm Value")
+
+    # Market-to-Book Ratio
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    ax2.plot(df[s_cond, :mu_b], df[s_cond, :s_mbr],
+             linewidth=linewidth, linestyle=s_mbr_linestyle,
+             color=s_color, label=L"MBR \," * s_label)
+    ax2.plot(df[r_cond, :mu_b], df[r_cond, :r_mbr],
+             linewidth=linewidth, linestyle=r_mbr_linestyle,
+             color=r_color, label=label=L"MBR \," * r_label)
+    ax2.grid(false) # Hide grid lines
+    ax2.set_ylabel("MBR")
+
+    # Common x-axis label
+    ax1.set_xlabel(L"$\mu_b$")
+
+    # Title
+    ax1.set_title("Firm Value v.s. Market-to-Book Ratio of Equity")
+
+    # Legend
+    lines = vcat([ax.get_legend_handles_labels()[1] for ax in fig.axes]...)
+    labels = vcat([ax.get_legend_handles_labels()[2] for ax in fig.axes]...)
+    fig.legend(lines, labels; bbox_to_anchor=(0.5,0.3), ncol=2)
+
+    if save_fig
+        fpath = string(repo_path, "/Plots/M2P")
+        file_path_name = string(fpath, "/", fname, ".eps")
+
+        println("Saving plot to ", fpath)
+        println("Plot name: ", fname)
+        PyPlot.savefig(file_path_name, dpi=fig_dpi, bbox_inches="tight")
+    end
+
+    return fig
+end
+# }}}2
 # Full Information v.s. Misrepresentation {{{2
 function plot_fi_misrep(df::DataFrame;
                         figaspect::Float64=.8)
@@ -1118,7 +1244,7 @@ function plot_fi_misrep(df::DataFrame;
 end
 # Creditors' Beliefs and Optimal Pooling Measures {{{2
 function plot_pool_mub_mbr(df::DataFrame;
-                           file_path_name::String="", 
+                           file_path_name::String="",
                            fig_size_x::Int64=6,
                            fig_size_y::Int64=6,
                            fig_aspect=.85,
@@ -1133,8 +1259,7 @@ function plot_pool_mub_mbr(df::DataFrame;
     fig, axs = PyPlot.subplots(2, 1, figsize=(fig_size_x, fig_size_y), sharex=true)
 
     # Optimal Measure of Bonds
-    # axs[1].plot(df[:, :mu_s], df[:, :pool_mu_b], linestyle="-.", marker="^", markersize=.5, linewidth=.5, colormub_color)
-    axs[1].plot(df[:, :mu_s], df[:, :pool_mu_b], linestyle="-.", linewidth=1.1, color=mub_color)
+    axs[1].plot(df[:, :mu_s], df[:, :pool_mu_b], linestyle="-.", color=mub_color)
     axs[1].set_title("Optimal Measure of Bonds")
 
     # Shared x-axis
@@ -1146,15 +1271,17 @@ function plot_pool_mub_mbr(df::DataFrame;
     axs[2].legend()
     axs[2].set_ylabel(L"$MBR_j\left(\mu_b \vert \gamma \right)$")
     axs[2].set_title("Market-to-Book Ratio of Equity")
-    axs[2].set_xlabel(L"$p_s^{\gamma}$")
+    axs[2].set_xlabel(L"$\gamma_s^{pool}$")
 
     # Title and Parameters
     fig.suptitle(string("Optimal Pooling Capital Structure and Shareholders' Payoff \n", L"for $q_s=0.0$, $q_r=", df[1, :q], L"$, $s_f=1.0$, $\sigma=0.3$"))
 
     # Save Fig
     if save_fig
-        fpath = pwd()
-        fpath = string(fpath[1:findfirst("bond-model", fpath)[end]], "/Plots/M2P")
+        # fpath = pwd()
+        # fpath = string(fpath[1:findfirst("bond-model", fpath)[end]], "/Plots/M2P")
+
+        fpath = string(repo_path, "/Plots/M2P")
         file_path_name = string(fpath, "/", fname, ".eps")
 
         println("Saving plot to ", fpath)
@@ -1165,6 +1292,54 @@ function plot_pool_mub_mbr(df::DataFrame;
     return fig
 end
 # }}}2
+# OTC Misrepresentation {{{2
+function plot_r_otc_misrep_mbr(rf, df::DataFrame;
+                               file_path_name::String="",
+                               fig_size_x::Int64=8,
+                               fig_size_y::Int64=5,
+                               fig_aspect=.85,
+                               fname::String="r_otc_misrep_mbr",
+                               r_ep_fi_mbr_color::String="blue",
+                               r_otc_misrep_mbr_color::String="crimson",
+                               fig_dpi::Int64=iso_plt_inputs[:fig_dpi],
+                               tight_pad=iso_plt_inputs[:tight_pad],
+                               h_pad=iso_plt_inputs[:h_pad],
+                               w_pad=iso_plt_inputs[:w_pad],
+                               save_fig::Bool=true)
+
+        Seaborn.set_style("darkgrid")
+        fig, axs = PyPlot.subplots(1, 1, figsize=(fig_size_x, fig_size_y), sharex=true)
+
+        # Optimal Measure of Bonds
+        axs.plot(df[:, :q], df[:, :ep_r_mbr], label="(Truth-Telling) EP standardized debt", linestyle="-.", color=r_ep_fi_mbr_color)
+        axs.plot(df[:, :q], df[:, :otc_r_mbr], label="(Misrepresentation) OTC covenant", linestyle="--", color=r_otc_misrep_mbr_color)
+        axs.set_ylabel(L"Risky Type's $MBR$")
+        # axs.set_title("\n Market-to-Book Ratio of Equity")
+        axs.set_xlabel(L"$q_r$")
+
+        fig.legend(bbox_to_anchor=(0.575,0.275))
+
+        # Title and Parameters
+        fig.suptitle(string("Risky Type's Market-to-Book Ratio of Equity \n",
+                            L"for $r_{disc}^{b, EP}=$", @sprintf("%.3f", df[1, :rbdisc_ep]),
+                            L", $r_{disc}^{b, OTC}$=", @sprintf("%.3f", df[1, :rbdisc_otc]),
+                            L", $\theta=$", @sprintf("%.2f", df[1, :theta]),
+                            L", $q_s=0.0$, $s_f=1.0$, $\sigma=$", @sprintf("%.2f", rf.sig)))
+
+        # PyPlot.tight_layout(pad=tight_pad, h_pad=h_pad, w_pad=w_pad)
+        if save_fig
+            if isempty(file_path_name)
+                fpath = string(repo_path, "/Plots/M2P")
+                file_path_name = string(fpath, "/", fname, ".eps")
+            end
+            println("Saving plot to ", fpath)
+            println("Plot name: ", fname)
+            PyPlot.savefig(file_path_name, dpi=fig_dpi, bbox_inches="tight")
+        end
+
+      return fig
+end
+# }}}2
 # Contour Plots {{{2
 function get_2pm_contour_plot_title(fr, eq_type::Symbol,
                                     zvar::Symbol;
@@ -1172,7 +1347,7 @@ function get_2pm_contour_plot_title(fr, eq_type::Symbol,
                                     rbdisc_otc::Float64=NaN,
                                     ft::Symbol=Symbol(""),
                                     mu_s::Float64=NaN,
-                                    params_list::Array{Symbol,1}=[:V0, :D, :sig],
+                                    params_list::Array{Symbol,1}=[:V0, :p, :sig],
                                     s_fi_fv::Float64=NaN, s_otc_fv::Float64=NaN)
 
     title_eq_type = [eq_type_2pm_title[k][2] for k in keys(eq_type_2pm_title)
@@ -1488,15 +1663,15 @@ end
 AV(fr, x::Float64) = fr.V0 * exp(x)
 
 # Tax Shields
-TS(fr) = fr.pi * fr.mu_b * fr.D
+TS(fr) = fr.pi * fr.mu_b * fr.p
 
 # Bankrupcty Condition
-BKR(fr, x::Float64) = AV(fr, x) + TS(fr) < fr.mu_b*fr.D
+BKR(fr, x::Float64) = AV(fr, x) + TS(fr) < fr.mu_b*fr.p
 
 function num_bondpr(fr, x1; xf::Float64=10., xN::Int64=10^3)
     bpr = .0
     if fr.mu_b > 0
-        dp(x2) = BKR(fr, x2) ? fr.alpha * AV(fr, x2) : fr.mu_b*fr.D
+        dp(x2) = BKR(fr, x2) ? fr.alpha * AV(fr, x2) : fr.mu_b*fr.p
         bpr = exp(-fr.rt.rbdisc) * expected_payoff(fr, x1, dp; xf=xf, xN=xN)/fr.mu_b
     end
 
@@ -1508,7 +1683,7 @@ function num_debtpr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3)
 end
 
 function num_eqpr(fr, x1::Float64; xf::Float64=10., xN::Int64=10^3)
-    ep(x) = max(AV(fr, x) + TS(fr) - fr.mu_b * fr.D, .0)
+    ep(x) = max(AV(fr, x) + TS(fr) - fr.mu_b * fr.p, .0)
     return exp(-fr.rt.rf) * expected_payoff(fr, x1, ep; xf=xf, xN=xN)
 end
 
@@ -1571,7 +1746,9 @@ end
 function get_num_prices(sf, rf;
                         mu_b_min::Float64=.0,
                         mu_b_max::Float64=NaN, mubN::Int64=30)
-    mu_b_max = isnan(mu_b_max) ? max(sf.V0/sf.D, rf.V0/rf.D) : mu_b_max
+
+    # mu_b_max = isnan(mu_b_max) ? max(sf.V0/sf.p, rf.V0/rf.p) : mu_b_max
+    mu_b_max = isnan(mu_b_max) ? maximum([get_max_mub(sf) , get_max_mub(rf)]) : mu_b_max
     mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
 
     sdpr_vec = [get_num_dpr(sf; mu_b=mu_b) for mu_b in mu_b_grid]
@@ -1597,7 +1774,7 @@ end
 
 # 3-Period Model Functions {{{1
 # Debt Rollover Cost
-num_drc(fr, x1::Float64) = fr.mu_b*(num_bondpr(fr, x1) - fr.D)
+num_drc(fr, x1::Float64) = fr.mu_b*(num_bondpr(fr, x1) - fr.p)
 
 # Equity Dilution
 num_eq_diff(fr, x::Float64, x1::Float64) = FV(fr, x) + num_drc(fr, x1)
@@ -1626,7 +1803,7 @@ end
 function num_default_cond(fr, x1::Float64; q::Float64=NaN, mu_b::Float64=NaN)
 
     # NET CASH FLOW:
-    ncf = fr.mu_b*(num_bondpr(fr, x1) - (1-fr.pi) * fr.D)
+    ncf = fr.mu_b*(num_bondpr(fr, x1) - (1-fr.pi) * fr.p)
 
     # Determine Default
     E1 = num_eqpr(fr, x1)
@@ -1652,7 +1829,7 @@ function t1_payoffs(fr, x1::Float64;
         x1star = get_x1(fr, x1)
 
         # NET CASH FLOW:
-        ncf = fr.mu_b*(num_bondpr(fr, x1star) - (1-fr.pi) * fr.D)
+        ncf = fr.mu_b*(num_bondpr(fr, x1star) - (1-fr.pi) * fr.p)
 
         # Determine Default
         E1 = num_eqpr(fr, x1star)
@@ -1660,7 +1837,7 @@ function t1_payoffs(fr, x1::Float64;
         # Default Condition
         default = .&(ncf < 0, abs.(ncf) > E1)
 
-        bp = default ? fr.alpha * FV(fr, x1) / fr.mu_b : fr.D
+        bp = default ? fr.alpha * FV(fr, x1) / fr.mu_b : fr.p
         ep = default ? 0. : E1
     else
         ep = num_eqpr(fr, x1)
