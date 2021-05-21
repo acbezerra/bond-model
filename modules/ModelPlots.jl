@@ -1,8 +1,9 @@
 # vim: set fdm=marker :
 
-dir_vec = rsplit(pwd(), "/")
-pos = findall(x -> x .== "bond-model", dir_vec)[1]
-main_path = join(dir_vec[1:pos], "/")
+# dir_vec = rsplit(pwd(), "/")
+# pos = findall(x -> x .== "bond-model", dir_vec)[1]
+# main_path = join(dir_vec[1:pos], "/")
+main_path = "/home/artur/BondPricing/bond-model"
 module_path=string(main_path, "/modules")
 push!(LOAD_PATH, module_path)
 # modnames = ["Batch"]

@@ -1,4 +1,4 @@
-module_path = "/home/artur/BondPricing/Julia/modules/"
+module_path = "/home/artur/BondPricing/bond-model/modules/"
 push!(LOAD_PATH, module_path)
 
 module FullInfoMod
