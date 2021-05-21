@@ -15,10 +15,11 @@ using LaTeXStrings
 
 using Revise
 
-dir_vec = rsplit(pwd(), "/")
-pos = [i for i in 1:size(dir_vec,1)
-        if dir_vec[i]=="bond-model"][1]
-main_path = join(dir_vec[1:pos], "/")
+# dir_vec = rsplit(pwd(), "/")
+# pos = [i for i in 1:size(dir_vec,1)
+#         if dir_vec[i]=="bond-model"][1]
+# main_path = join(dir_vec[1:pos], "/")
+main_path = "/home/artur/BondPricing/bond-model"
 module_path = string(main_path, "/modules/")
 # include(string(joinpath(module_path, "2period"), ".jl"))
 modls = ["2period"] # "ModelPlots",
@@ -29,7 +30,7 @@ end
 # Create Firms  {{{1
 sf = p2m.firm_initializer(:st, p2m.pardict)
 rf = p2m.firm_initializer(:rt, p2m.pardict)
-
+# }}}1
 # Inputs {{{1
 rqgrid = .0:0.05:1.
 mu_s_grid = .1:.1:.8
@@ -37,12 +38,12 @@ mu_s_grid = .1:.1:.8
 mu_b_min=1e-3
 mubN=30
 mu_b_max=NaN
-mu_b_max = isnan(mu_b_max) ? sf.V0/sf.D : mu_b_max
+mu_b_max = isnan(mu_b_max) ? sf.V0/sf.p : mu_b_max
 mu_b_grid = range(mu_b_min, stop=mu_b_max, length=mubN)
 
 # Illiquidity Cost
 ilc_grid = 2*1e-2:5*10^-4:6*1e-2
-
+# }}}1
 # Compute OTC Results {{{1
 ilcdf_list = fetch(@spawn [p2m.get_otc_prices(sf, ilc; mu_b_grid=Array(mu_b_grid))
                             for ilc in ilc_grid])
@@ -56,27 +57,26 @@ otcdf = vcat(otcdf_list...)
 # Reset Firms
 sf = p2m.firm_initializer(:st, p2m.pardict)
 rf = p2m.firm_initializer(:rt, p2m.pardict)
-
+# }}}1
 # Full Information and Misrepresentation  {{{1
 df_list = fetch(@spawn [p2m.get_prices(sf, rf; rq=rq) for rq in rqgrid])
 df = vcat(df_list...)
 
 fidf_list = fetch(@spawn [p2m.get_opt_lev(sf, rf; df=df, rq=rq) for rq in rqgrid])
 fidf = vcat(fidf_list...)
-
+# }}}1
 # Pooling Market Outcomes {{{1
 # pooldf = p2m.get_pool_res(sf, rf, fidf[:, :rq], mu_s_grid[1]; fidf=fidf)
 pooldf_list = fetch(@spawn [p2m.get_pool_res(sf, rf, fidf[:, :rq],
                                              mu_s; fidf=fidf)
                             for mu_s in mu_s_grid])
 pooldf = vcat(pooldf_list...)
-
+# }}}1
 # Separating Market Outcomes  {{{1
 sepdf = p2m.get_sep_res(sf, rf, fidf)
-
+# }}}1
 # Form Interpolated Surfaces {{{1
-
-## Restricted q grid {{{2
+# Restricted q grid {{{2
 xvals = unique(sepdf[:, :q])
 yvals = Array(mu_s_grid)
 fid = p2m.form_eq_dict(fidf; xvals=xvals, yvals=yvals)
@@ -89,8 +89,8 @@ mp_funs = Dict([k => fid[:interp][k] for k in mpf])
 pool_funs = poold[:interp]
 sep_funs = sepd[:interp]
 fi_fv = fidf[1, :s_fi_fv]
-
-# OTC Function
+# }}}2
+# OTC Function {{{2
 ilc_otc = otcdf[:, :ilc][39]
 s_otc_fv = otcdf[abs.(otcdf[:, :ilc] .- ilc_otc) .< 1e-5, :s_fi_fv][1]
 s_otc_mbr = otcdf[abs.(otcdf[:, :ilc] .- ilc_otc) .< 1e-5, :s_fi_mbr][1]
@@ -106,7 +106,7 @@ pltd = p2m.get_eq_contour_mesh_grid(xvals, yvals, fun_dict)
 # Reset Firms
 sf = p2m.firm_initializer(:st, p2m.pardict)
 rf = p2m.firm_initializer(:rt, p2m.pardict)
-
+# }}}2
 # Full q grid {{{2
 xvals = unique(fidf[:, :rq])
 yvals = Array(mu_s_grid)
@@ -138,9 +138,8 @@ ext_pltd = p2m.get_eq_contour_mesh_grid(xvals, yvals, ext_fun_dict)
 # Reset Firms
 sf = p2m.firm_initializer(:st, p2m.pardict)
 rf = p2m.firm_initializer(:rt, p2m.pardict)
-
-
-# Store (q, mu_s)-point results
+# }}}2
+# Store (q, mu_s)-point results {{{2
 ptr = Dict{Symbol, Dict{Symbol, Any}}(:p1 => Dict{Symbol, Any}(:q => .3,
                                                                :mu_s => .7),
                                       :p2 => Dict{Symbol, Any}(:q => .3,
@@ -172,11 +171,13 @@ end
 
 ptdf = vcat([DataFrame(ptr[pt]) for pt in keys(ptr)]...)
 rptdf = p2m.df_reshaper(ptdf)
-
+# }}}2
+# }}}1
 resd = Dict(:sf => sf, :rf => rf, :ptr => ptr,
             :s_otc_fv => s_otc_fv, :s_otc_mbr => s_otc_mbr,
             :ilc_otc => ilc_otc,
             :fid => fid, :ext_fid => ext_fid,
             :poold => poold, :ext_poold => ext_poold,
             :sepd => sepd,
-            :pltd => pltd, :ext_pltd => ext_pltd)
+            :pltd => pltd, :ext_pltd => ext_pltd, 
+            :otcdf => otcdf)
