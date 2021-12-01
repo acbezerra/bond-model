@@ -10,7 +10,7 @@
 #PBS -l nodes=1:ppn=12,mem=40g
 #PBS -j oe
 #PBS -V
-#PBS -t 1-70 
+#PBS -t 1-1 #70
 ## # 400   # 56
 
 
