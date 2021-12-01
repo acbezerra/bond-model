@@ -460,7 +460,7 @@ function load_joint_eqdf(df_fpath_name::String; svm::Bool=true)
 
         # Replace Symbol DataType by String
         mcd = Dict([x => (x in symbol_cols) ? String : cd[x] for x in keys(cd)])
-        df = CSV.read(df_fpath_name, types=mcd)
+        df = CSV.read(df_fpath_name, DataFrame; types=mcd)
 
         # Re-Adjust Columns
         for x in symbol_cols

@@ -999,7 +999,7 @@ function conditionally_load_df(df, path_fname::String,
     try
         return eval(df)
     catch
-        return CSV.read(path_fname; types=types)
+        return CSV.read(path_fname, DataFrame; types=types)
     end
 end
 
@@ -1020,7 +1020,7 @@ function load_eq_results(bt, svm, dfn; use_all_eqdf::Bool=true)
     try
       #= coltypes = vcat(fill(Float64, 16), [Bool], fill(Float64, 16)) =#
       if .&(use_all_eqdf,  string("all_", dfn) in readdir(bt.mi.comb_res_path))
-        all_eqdf = CSV.read(string(bt.mi.comb_res_path, "/all_", dfn))
+        all_eqdf = CSV.read(string(bt.mi.comb_res_path, "/all_", dfn), DataFrame)
 
         #= if size(all_eqdf, 2) == size(coltypes, 1) =#
         #=   all_eqdf = CSV.read(string(bt.mi.comb_res_path, "/all_", dfn), =#
@@ -1056,7 +1056,7 @@ function load_eq_results(bt, svm, dfn; use_all_eqdf::Bool=true)
 
         return sol
       elseif !use_all_eqdf
-        sol = CSV.read(string(bt.mi.comb_res_path, "/", dfn))#;
+        sol = CSV.read(string(bt.mi.comb_res_path, "/", dfn), DataFrame)#;
         #               types=vcat(coltypes, [Bool]))
 
         return unique!(sol, [:p, :vb])
@@ -1100,7 +1100,7 @@ function load_svm_opt_results(bt;
         #                       end
         #                       return Float64
         #                     end, cols)
-        optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"),
+        optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), DataFrame;
                          types=opt_k_struct_df_coltypes)
 
         if !isnan(optDF[1, :c])
@@ -1161,7 +1161,7 @@ function load_svm_opt_results_df(bt;
             fpath = bt.mi.maturity_path
         end
         println("Loading optimal results dataframe...")
-        optDF = CSV.read(string(fpath, "/", dfname, ".csv"); types=coltypes)
+        optDF = CSV.read(string(fpath, "/", dfname, ".csv"), DataFrame; types=coltypes)
     end
 
     # if !(:MBR in names(optDF))
@@ -2047,7 +2047,7 @@ function optimal_capital_struct(bt, svm;
 
     # Load Solutions
     if isempty(df)
-        df = CSV.read(string(bt.mi.comb_res_path, "/", dfname, ".csv"),
+        df = CSV.read(string(bt.mi.comb_res_path, "/", dfname, ".csv"), DataFrame;
                       types=vcat(fill(Float64, 23), [Bool], fill(Float64, 5)))
     end
 
@@ -2100,7 +2100,7 @@ function save_combination_opt_k_struct(bt, eqDF::DataFrame;
 
     if (string(dfname, ".csv") in readdir(bt.mi.comb_res_path))
         try
-            seqDF = CSV.read(string(bt.mi.comb_res_path, "/", dfname, ".csv"),
+            seqDF = CSV.read(string(bt.mi.comb_res_path, "/", dfname, ".csv"), DataFrame;
                              types=coltypes)
 
             cond = .&(vcat([seqDF[:, :obj_fun] .== eqDF[:, :obj_fun]],
@@ -2518,7 +2518,7 @@ function optimal_cvm_capital_struct(bt, cvm;
 
     # Load Solutions
     if isempty(df)
-        df = CSV.read(string(bt.mi.comb_res_path, "/", dfname, ".csv"),
+        df = CSV.read(string(bt.mi.comb_res_path, "/", dfname, ".csv"), DataFrame;
                       types=fill(Float64, 28))
     end
 
@@ -2623,7 +2623,7 @@ function cvm_results_loader(comb_num::Int64;
                             display_msgs::Bool=false)
 
     bt = get_bt(; model="cvm", comb_num=comb_num, display_msgs=display_msgs)
-    optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), types=coltypes)
+    optDF = CSV.read(string(bt.mi.comb_res_path, "/", optdf_name, ".csv"), DataFrame; types=coltypes)
 
     return optDF
 end
@@ -2725,7 +2725,7 @@ function load_cvm_opt_results_df(; m::Float64=NaN,
 
     try
         println("Loading optimal results dataframe...")
-        return CSV.read(string(fpath, "/", dfname, ".csv"), types=cvm_opt_k_struct_df_coltypes)
+        return CSV.read(string(fpath, "/", dfname, ".csv"), DataFrame; types=cvm_opt_k_struct_df_coltypes)
     catch
         println("Unable to load optimal results dataframe. Recomputing...")
         return compile_cvm_opt_results(; m=m,
