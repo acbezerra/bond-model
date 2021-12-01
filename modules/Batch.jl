@@ -369,26 +369,26 @@ end
 # include("_batch_set_get_methods/_batch_set_get_params.jl")
 # ############## Set Parameter Combinations ##############
 function set_param_comb_df(bt)
-    # Create Parameter Combinations DataFrame
-    pcdf = DataFrame(hcat(bt.bp._params_combs...)')
+  # Create Parameter Combinations DataFrame
+  pcdf = DataFrame(hcat(bt.bp._params_combs...)')
 
-    cols_dict = Dict([names(pcdf)[i] => Symbol(bt.bp._params_order[i])
-                      for i in 1:size(names(pcdf), 1)])
+  cols_dict = Dict([names(pcdf)[i] => Symbol(bt.bp._params_order[i])
+                    for i in 1:size(names(pcdf), 1)])
 
-    rename!(pcdf, cols_dict)
+  rename!(pcdf, cols_dict)
 
-    pcdf[!, :comb_num] .= 1:size(pcdf, 1)
+  pcdf[!, :comb_num] .= 1:size(pcdf, 1)
 
-    # Important: sort by :m
-    sort!(pcdf, :m)
+  # Important: sort by :m
+  sort!(pcdf, :m)
   # Count rows by :m
   # pcdf[!, :m_comb_num] .= by(pcdf, :m, m_comb_num = :m => x -> 1:size(x, 1))[:, :m_comb_num]
   pcdf[!, :m_comb_num] .= combine(groupby(pcdf, ["m"]), :m => (x -> 1:size(x, 1)) => :m_comb_num)[:, :m_comb_num]
+  
+  idcols = [:comb_num, :m, :m_comb_num]
+  bt.bp.df = pcdf[:, vcat(idcols, [Symbol(x) for x in names(pcdf) if !(Symbol(x) in idcols)])]
 
-    idcols = [:comb_num, :m, :m_comb_num]
-    bt.bp.df = pcdf[:, vcat(idcols, [Symbol(x) for x in names(pcdf) if !(Symbol(x) in idcols)])]
-
-    return bt
+  return bt
 end
 
 
