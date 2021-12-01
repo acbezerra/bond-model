@@ -14,8 +14,8 @@
 cd $PBS_O_WORKDIR
 
 #Create a job specific temp directory
-mkdir -p ~/BondPricing/Julia/log_files/CVM/$PBS_JOBID
-export JULIAWORKDIR=~/BondPricing/Julia/log_files/CVM/$PBS_JOBID
+mkdir -p ~/BondPricing/Julia/excluded/log_files/CVM/$PBS_JOBID
+export JULIAWORKDIR=~/BondPricing/Julia/excluded/log_files/CVM/$PBS_JOBID
 
 # Load Python and Julia Modules
 source ~/BondPricing/Julia/Batch/module_loader.sh

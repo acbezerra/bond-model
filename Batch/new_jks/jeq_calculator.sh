@@ -17,8 +17,8 @@
 cd $PBS_O_WORKDIR
 
 #Create a job specific temp directory
-mkdir -p ~/BondPricing/bond-model/log_files/JEQ/$PBS_JOBID
-export JULIAWORKDIR=~/BondPricing/bond-model/log_files/JEQ/$PBS_JOBID
+mkdir -p ~/BondPricing/bond-model/excluded/log_files/JEQ/$PBS_JOBID
+export JULIAWORKDIR=~/BondPricing/bond-model/excluded/log_files/JEQ/$PBS_JOBID
 
 # Load Python and Julia Modules
 source ~/BondPricing/bond-model/Batch/module_loader.sh
