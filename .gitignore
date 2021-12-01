@@ -1,9 +1,7 @@
 **/.AppleDouble
-log_files/
-Priorem/
+excluded/
 Results/
 JupyterNotebooks/.ipynb_checkpoints/
 **/jSVM.o*
 **/*.sh~
 **/*.jl~
-.stCommitMsg
