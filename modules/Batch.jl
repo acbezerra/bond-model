@@ -381,8 +381,9 @@ function set_param_comb_df(bt)
 
     # Important: sort by :m
     sort!(pcdf, :m)
-    # Count rows by :m
-    pcdf[!, :m_comb_num] .= by(pcdf, :m, m_comb_num = :m => x -> 1:size(x, 1))[:, :m_comb_num]
+  # Count rows by :m
+  # pcdf[!, :m_comb_num] .= by(pcdf, :m, m_comb_num = :m => x -> 1:size(x, 1))[:, :m_comb_num]
+  pcdf[!, :m_comb_num] .= combine(groupby(pcdf, ["m"]), :m => (x -> 1:size(x, 1)) => :m_comb_num)[:, :m_comb_num]
 
     idcols = [:comb_num, :m, :m_comb_num]
     bt.bp.df = pcdf[:, vcat(idcols, [Symbol(x) for x in names(pcdf) if !(Symbol(x) in idcols)])]
