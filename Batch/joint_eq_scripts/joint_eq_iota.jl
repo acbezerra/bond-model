@@ -13,7 +13,7 @@ using Dates
 # using LaTeXStrings
 
 main_path = "/home/artur/BondPricing"
-module_path = string(main_path, "/", "Julia/modules/")
+module_path = string(main_path, "/", "bond-model/modules/")
 modls = ["Batch", "ModelObj", "AnalyticFunctions", 
          "BondPrInterp", "EqFinDiff", "ModelPlots", "JointEq"]
 for modl in modls

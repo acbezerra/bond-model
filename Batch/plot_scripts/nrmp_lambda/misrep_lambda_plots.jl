@@ -12,14 +12,14 @@ using Seaborn
 using LaTeXStrings
 
 main_path = "/home/artur/BondPricing"
-module_path = string(main_path, "/", "Julia/modules/")
+module_path = string(main_path, "/", "bond-model/modules/")
 modls = ["Batch", "ModelObj", "AnalyticFunctions", 
          "BondPrInterp", "EqFinDiff", "ModelPlots", "JointEq"]
 for modl in modls
     include(string(joinpath(module_path, modl), ".jl"))
 end
 
-plot_script_path = string(main_path, "/Julia/Batch/plot_scripts")
+plot_script_path = string(main_path, "/bond-model/Batch/plot_scripts")
 plots_xvar_dir = "nrmp_lambda"
 rerun_misrep = false
 save_misrepdf = true

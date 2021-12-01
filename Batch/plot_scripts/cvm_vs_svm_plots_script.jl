@@ -13,7 +13,7 @@ using Seaborn
 using LaTeXStrings
 
 main_path = "/home/artur/BondPricing"
-module_path = string(main_path, "/", "Julia/modules/")
+module_path = string(main_path, "/", "bond-model/modules/")
 modls = ["AnalyticFunctions",  "ModelObj", "BondPrInterp",
          "EqFinDiff", "Batch", "ModelPlots"]
 for modl in modls
