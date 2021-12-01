@@ -37,7 +37,7 @@ using EqFinDiff: get_cvm_eq, eq_fd
 # include("_batch_inputs.jl")
 # Batch Inputs
 # Directories:
-main_dir = "Julia"
+main_dir = "bond-model"
 res_dir = "Results"
 mat_dir_prefix = "m_"
 coupon_dir_prefix = "c_"

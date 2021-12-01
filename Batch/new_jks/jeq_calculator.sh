@@ -17,11 +17,11 @@
 cd $PBS_O_WORKDIR
 
 #Create a job specific temp directory
-mkdir -p ~/BondPricing/Julia/log_files/JEQ/$PBS_JOBID
-export JULIAWORKDIR=~/BondPricing/Julia/log_files/JEQ/$PBS_JOBID
+mkdir -p ~/BondPricing/bond-model/log_files/JEQ/$PBS_JOBID
+export JULIAWORKDIR=~/BondPricing/bond-model/log_files/JEQ/$PBS_JOBID
 
 # Load Python and Julia Modules
-source ~/BondPricing/Julia/Batch/module_loader.sh
+source ~/BondPricing/bond-model/Batch/module_loader.sh
 
 # $PBS_NUM_PPN gives the number of processors to be used in each node.
 # $PBS_ARRAYID gives the position in the vector of measures of safe firm
