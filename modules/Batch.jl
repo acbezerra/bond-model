@@ -370,7 +370,8 @@ end
 # ############## Set Parameter Combinations ##############
 function set_param_comb_df(bt)
   # Create Parameter Combinations DataFrame
-  pcdf = DataFrame(hcat(bt.bp._params_combs...)')
+  # pcdf = DataFrame(hcat(bt.bp._params_combs...)')
+  pcdf = DataFrame(Matrix(hcat(bt.bp._params_combs...)'), :auto)
 
   cols_dict = Dict([names(pcdf)[i] => Symbol(bt.bp._params_order[i])
                     for i in 1:size(names(pcdf), 1)])
