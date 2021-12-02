@@ -70,7 +70,8 @@ function get_types_mu_s_comb_df(types_dict::Dict{Symbol, Array{Float64, N} where
                                                            x6 in types_dict[types_order[6]],
                                                            x7 in types_dict[types_order[7]]]
 
-    df = DataFrame(hcat(types_combs...)')
+    # df = DataFrame(hcat(types_combs...)')
+    df = DataFrame(Matrix(hcat(types_combs...)'), :auto)
     rename!(df, types_order)
     df[!, :pair_num] .= 1:size(df, 1)
 
